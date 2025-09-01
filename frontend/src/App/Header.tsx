@@ -6,9 +6,12 @@ import {
   Badge,
   Burger,
   Divider,
+  Drawer,
   Group,
   Menu,
 } from "@mantine/core";
+import { useDisclosure } from "@mantine/hooks";
+import { faBell } from "@fortawesome/free-regular-svg-icons/faBell";
 import {
   faArrowRotateLeft,
   faGear,
@@ -35,6 +38,11 @@ const AppHeader: FunctionComponent = () => {
 
   const goHome = useGotoHomepage();
 
+  const [
+    notificationsOpened,
+    { open: openNotifications, close: closeNotifications },
+  ] = useDisclosure(false);
+
   return (
     <AppShell.Header p="md" className={styles.header}>
       <Group justify="space-between" wrap="nowrap">
@@ -58,6 +66,13 @@ const AppHeader: FunctionComponent = () => {
         </Group>
         <Group gap="xs" justify="right" wrap="nowrap">
           <Search></Search>
+          <Action
+            label="Notifications"
+            tooltip={{ position: "left", openDelay: 2000 }}
+            icon={faBell}
+            size="lg"
+            onClick={openNotifications}
+          ></Action>
           <Menu>
             <Menu.Target>
               <Action
@@ -90,6 +105,19 @@ const AppHeader: FunctionComponent = () => {
           </Menu>
         </Group>
       </Group>
+      <Drawer
+        opened={notificationsOpened}
+        onClose={closeNotifications}
+        title="Notifications"
+        position="right"
+        size="md"
+        overlayProps={{ opacity: 0.35, blur: 2 }}
+      >
+        {/* Replace this placeholder content with your notifications list */}
+        <div>
+          <p>No notifications yet.</p>
+        </div>
+      </Drawer>
     </AppShell.Header>
   );
 };
