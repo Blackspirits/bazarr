@@ -118,7 +118,7 @@ const AppHeader: FunctionComponent = () => {
       <Drawer
         opened={notificationsOpened}
         onClose={closeNotifications}
-        title="Jobs Drawer"
+        title="Notifications"
         position="right"
         size="md"
         overlayProps={{ opacity: 0.35, blur: 2 }}
