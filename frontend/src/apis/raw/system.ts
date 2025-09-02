@@ -78,6 +78,15 @@ class SystemApi extends BaseApi {
     return response.data;
   }
 
+  async jobs(id?: number, status?: string) {
+    const response = await this.get<DataWrapper<System.Jobs[]>>("/jobs");
+    return response.data;
+  }
+
+  async deleteJobs(id: number) {
+    await this.post("/jobs", { id });
+  }
+
   async releases() {
     const response = await this.get<DataWrapper<ReleaseInfo[]>>("/releases");
     return response.data;

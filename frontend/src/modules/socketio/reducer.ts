@@ -213,5 +213,14 @@ export function createDefaultReducer(): SocketIO.Reducer[] {
         });
       },
     },
+    {
+      key: "jobs",
+      any: () => {
+        // Full refresh of jobs list
+        void queryClient.invalidateQueries({
+          queryKey: [QueryKeys.System, QueryKeys.Jobs],
+        });
+      },
+    },
   ];
 }

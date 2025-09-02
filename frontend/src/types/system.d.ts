@@ -16,6 +16,12 @@ declare namespace System {
     next_run_time: string;
   }
 
+  interface Jobs {
+    job_id: number;
+    job_name: string;
+    status: string;
+  }
+
   interface Status {
     bazarr_config_directory: string;
     bazarr_directory: string;
