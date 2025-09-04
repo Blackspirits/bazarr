@@ -15,6 +15,7 @@ class SystemJobs(Resource):
         'job_id': fields.Integer(),
         'job_name': fields.String(),
         'status': fields.String(),
+        'last_run_time': fields.String(),
     })
 
     get_request_parser = reqparse.RequestParser()

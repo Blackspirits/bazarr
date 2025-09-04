@@ -4,6 +4,7 @@ import logging
 import importlib
 
 from time import sleep
+from datetime import datetime
 from collections import deque
 
 from app.event_handler import event_stream
@@ -32,6 +33,8 @@ class Job:
     :type kwargs: dict, optional
     :ivar status: Current status of the job, initialized to 'pending'.
     :type status: str
+    :ivar last_run_time: Last time the job was run, initialized to None.
+    :type last_run_time: datetime
     """
     def __init__(self, job_id: int, job_name: str, module: str, func: str, args: list = None, kwargs: dict = None):
         self.job_id = job_id
@@ -41,6 +44,7 @@ class Job:
         self.args = args
         self.kwargs = kwargs
         self.status = 'pending'
+        self.last_run_time = datetime.now()
 
 
 class JobsQueue:
@@ -139,7 +143,7 @@ class JobsQueue:
         if job_id:
             return [vars(job) for job in queues if job.job_id == job_id]
         else:
-            return [vars(job) for job in queues]
+            return sorted([vars(job) for job in queues], key=lambda x: x['last_run_time'], reverse=True)
     
     def remove_job_from_pending_queue(self, job_id: int):
         """
@@ -194,6 +198,7 @@ class JobsQueue:
                 else:
                     try:
                         job.status = 'running'
+                        job.last_run_time = datetime.now()
                         self.jobs_running_queue.append(job)
                         logging.debug(f"Running job {job.job_name} (id {job.job_id}): "
                                       f"{job.module}.{job.func}({job.args}, {job.kwargs})")
@@ -202,10 +207,12 @@ class JobsQueue:
                     except Exception as e:
                         logging.exception(f"Exception raised while running function: {e}")
                         job.status = 'failed'
+                        job.last_run_time = datetime.now()
                         self.jobs_failed_queue.append(job)
                     else:
                         event_stream(type='jobs', action='update', payload=job.job_id)
                         job.status = 'completed'
+                        job.last_run_time = datetime.now()
                         self.jobs_completed_queue.append(job)
                     finally:
                         self.jobs_running_queue.remove(job)

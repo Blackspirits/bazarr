@@ -20,6 +20,7 @@ declare namespace System {
     job_id: number;
     job_name: string;
     status: string;
+    last_run_time: string;
   }
 
   interface Status {

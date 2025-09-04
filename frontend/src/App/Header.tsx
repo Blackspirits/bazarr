@@ -1,4 +1,5 @@
-import { FunctionComponent } from "react";
+import { FunctionComponent, JSX } from "react";
+import TimeAgo from "react-timeago";
 import {
   Anchor,
   AppShell,
@@ -8,6 +9,7 @@ import {
   Card,
   Divider,
   Drawer,
+  Grid,
   Group,
   Loader,
   Menu,
@@ -28,6 +30,7 @@ import { useNavbar } from "@/contexts/Navbar";
 import { useIsOnline } from "@/contexts/Online";
 import { Environment, useGotoHomepage } from "@/utilities";
 import styles from "./Header.module.scss";
+import Jobs = System.Jobs;
 
 const AppHeader: FunctionComponent = () => {
   const { data: settings } = useSystemSettings();
@@ -123,7 +126,7 @@ const AppHeader: FunctionComponent = () => {
         onClose={closeNotifications}
         title="Notifications"
         position="right"
-        size="md"
+        size="lg"
         overlayProps={{ opacity: 0.35, blur: 2 }}
       >
         {jobsLoading && (
@@ -144,53 +147,71 @@ const AppHeader: FunctionComponent = () => {
         {!jobsLoading &&
           !jobsError &&
           (Array.isArray(jobs) ? (
-            <Stack gap="sm">
-              {jobs.length === 0 && (
-                <Card withBorder padding="md" radius="sm">
-                  <Text size="sm" c="dimmed">
-                    No jobs.
-                  </Text>
-                </Card>
-              )}
+            <>
+              {jobs.length > 0 &&
+                ((): JSX.Element[] => {
+                  const grouped = (jobs as Jobs[]).reduce<
+                    Record<string, Jobs[]>
+                  >((acc, job) => {
+                    const key = job?.status ?? "unknown";
+                    (acc[key] ||= []).push(job);
+                    return acc;
+                  }, {});
 
-              {jobs.map((job, idx: number) => {
-                const status = job?.status;
+                  const order: Array<keyof typeof grouped | "unknown"> = [
+                    "running",
+                    "pending",
+                    "failed",
+                    "completed",
+                    "unknown",
+                  ];
 
-                return (
-                  <Card
-                    key={job?.job_id ?? job?.job_name + idx}
-                    withBorder
-                    radius="sm"
-                    padding="md"
-                  >
-                    <Group
-                      justify="space-between"
-                      align="center"
-                      mb="xs"
-                      wrap="nowrap"
-                    >
-                      <Text>{job?.job_name}</Text>
-                      <Badge
-                        variant={status === "running" ? "filled" : "light"}
-                        color={
-                          status === "pending"
-                            ? "blue"
-                            : status === "running"
-                              ? "green"
-                              : status === "failed"
-                                ? "red"
-                                : status === "completed"
-                                  ? "grey"
-                                  : "toto"
-                        }
-                      >
-                        {String(status)}
-                      </Badge>
-                    </Group>
-                  </Card>
-                );
-              })}
-            </Stack>
+                  return order
+                    .filter((status) => grouped[status as string]?.length)
+                    .map((status) => (
+                      <Stack key={status} gap="xs">
+                        <Group justify="space-between" wrap="nowrap">
+                          <Badge
+                            variant={status === "running" ? "filled" : "light"}
+                            radius="sm"
+                            size="md"
+                          >
+                            {status}
+                          </Badge>
+                          <Text size="xs" c="dimmed">
+                            {grouped[status as string].length} job
+                            {grouped[status as string].length > 1 ? "s" : ""}
+                          </Text>
+                        </Group>
+
+                        <Stack gap="xs">
+                          {grouped[status as string].map((job) => (
+                            <Card
+                              key={job?.job_id}
+                              withBorder
+                              radius="sm"
+                              padding="sm"
+                            >
+                              <Grid columns={12}>
+                                <Grid.Col span={9}>
+                                  <Text truncate="end">{job?.job_name}</Text>
+                                </Grid.Col>
+                                <Grid.Col span={3}>
+                                  <Badge size="sm">
+                                    <TimeAgo
+                                      date={job?.last_run_time}
+                                      minPeriod={60}
+                                    />
+                                  </Badge>
+                                </Grid.Col>
+                              </Grid>
+                            </Card>
+                          ))}
+                        </Stack>
+                      </Stack>
+                    ));
+                })()}
+            </>
           ) : (
             <Card withBorder padding="md" radius="sm">
               <Text size="sm" c="dimmed" mb="xs">
