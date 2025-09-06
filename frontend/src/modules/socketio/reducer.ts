@@ -1,6 +1,7 @@
 import { cleanNotifications, showNotification } from "@mantine/notifications";
 import queryClient from "@/apis/queries";
 import { QueryKeys } from "@/apis/queries/keys";
+import api from "@/apis/raw";
 import { notification, task } from "@/modules/task";
 import { LOG } from "@/utilities/console";
 import { setCriticalError, setOnlineStatus } from "@/utilities/event";
@@ -215,10 +216,47 @@ export function createDefaultReducer(): SocketIO.Reducer[] {
     },
     {
       key: "jobs",
-      any: () => {
-        // Full refresh of jobs list
-        void queryClient.invalidateQueries({
-          queryKey: [QueryKeys.System, QueryKeys.Jobs],
+      update: (ids) => {
+        ids.forEach((id) => {
+          // Update only the specified job id in the jobs list cache
+          LOG("info", "Updating single job (partial)", id);
+          const idNum = id as number;
+
+          if (Number.isNaN(idNum)) {
+            LOG("warning", "Invalid job id in SocketIO payload", id);
+            return;
+          }
+
+          void api.system
+            .jobs(idNum)
+            .then((resp: LooseObject[] | undefined) => {
+              const incomingJobs = Array.isArray(resp) ? resp : [];
+              if (incomingJobs.length === 0) {
+                return;
+              }
+              const incoming = incomingJobs[0];
+
+              const key = [QueryKeys.System, QueryKeys.Jobs] as const;
+              const current =
+                queryClient.getQueryData<LooseObject[]>(key) || [];
+
+              const idx = current.findIndex(
+                (j) => j.job_id === incoming.job_id,
+              );
+              const next =
+                idx >= 0
+                  ? [
+                      ...current.slice(0, idx),
+                      { ...current[idx], ...incoming },
+                      ...current.slice(idx + 1),
+                    ]
+                  : [...current, incoming];
+
+              queryClient.setQueryData(key, next);
+            })
+            .catch((e: unknown) => {
+              LOG("warning", "Failed to fetch job update", id, e);
+            });
         });
       },
     },
