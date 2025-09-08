@@ -292,9 +292,11 @@ def series_full_scan_subtitles(job_id=None, use_cache=None):
         select(TableEpisodes.path))\
         .all()
 
-    jobs_queue.update_job_progress(job_id=job_id, progress_max=len(episodes), progress_message='Episodes subtitles')
+    if job_id:
+        jobs_queue.update_job_progress(job_id=job_id, progress_max=len(episodes), progress_message='Indexing')
     for i, episode in enumerate(episodes, start=1):
-        jobs_queue.update_job_progress(job_id=job_id, progress_value=i)
+        if job_id:
+            jobs_queue.update_job_progress(job_id=job_id, progress_value=i)
         store_subtitles(episode.path, path_mappings.path_replace(episode.path), use_cache=use_cache)
 
     logging.info('BAZARR All existing episode subtitles indexed from disk.')

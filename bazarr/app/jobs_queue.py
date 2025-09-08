@@ -165,6 +165,13 @@ class JobsQueue:
         else:
             return sorted([vars(job) for job in queues], key=lambda x: x['last_run_time'], reverse=True)
     
+    def get_job_status(self, job_id: int):
+        job = self.list_jobs_from_queue(job_id=job_id)
+        if job and 'status' in job[0]:
+            return job[0]['status']
+        else:
+            return "Unknown job"
+
     def update_job_progress(self, job_id: int, progress_value=None, progress_max=None, progress_message: str = ""):
         """
         Updates the progress value and message for a specific job within the running jobs queue. The function
@@ -211,7 +218,7 @@ class JobsQueue:
         :rtype: bool
         """
         for job in self.jobs_pending_queue:
-            if job.job_id == job_id:
+            if job.job_id == job_id and job.status == 'pending':
                 try:
                     self.jobs_pending_queue.remove(job)
                 except ValueError:

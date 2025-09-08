@@ -2,6 +2,7 @@
 
 import os
 import logging
+import time
 from constants import MINIMUM_VIDEO_SIZE
 
 from sqlalchemy.exc import IntegrityError
@@ -40,8 +41,10 @@ def get_episodes_monitored_table(series_id):
 
 
 def update_all_episodes():
-    jobs_queue.feed_jobs_pending_queue("Full disk scan...", "subtitles.indexer.series", "series_full_scan_subtitles",
-                                       is_progress=True)
+    job_id = jobs_queue.feed_jobs_pending_queue("Full disk scan for episodes subtitles", "subtitles.indexer.series",
+                                                "series_full_scan_subtitles", is_progress=True)
+    while jobs_queue.get_job_status(job_id=job_id) in ['pending', 'running']:
+        time.sleep(1)
 
 
 def sync_episodes(series_id, send_event=True, defer_search=False, **kwargs):

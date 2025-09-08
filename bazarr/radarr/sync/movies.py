@@ -1,23 +1,23 @@
 # coding=utf-8
 
-import os
 import logging
-from constants import MINIMUM_VIDEO_SIZE
-
-from sqlalchemy.exc import IntegrityError
+import os
+import time
 from datetime import datetime
 
 from app.config import settings
-from utilities.path_mappings import path_mappings
-from subtitles.indexer.movies import store_subtitles_movie, movies_full_scan_subtitles
-from radarr.rootfolder import check_radarr_rootfolder
-from subtitles.mass_download import movies_download_subtitles
 from app.database import TableMovies, TableLanguagesProfiles, database, insert, update, delete, select
 from app.event_handler import event_stream, show_progress, hide_progress
 from app.jobs_queue import jobs_queue
+from constants import MINIMUM_VIDEO_SIZE
+from radarr.rootfolder import check_radarr_rootfolder
+from subtitles.indexer.movies import store_subtitles_movie, movies_full_scan_subtitles
+from subtitles.mass_download import movies_download_subtitles
+from utilities.path_mappings import path_mappings
 
-from .utils import get_profile_list, get_tags, get_movies_from_radarr_api
+from sqlalchemy.exc import IntegrityError
 from .parser import movieParser
+from .utils import get_profile_list, get_tags, get_movies_from_radarr_api
 
 # map between booleans and strings in DB
 bool_map = {"True": True, "False": False}
@@ -36,8 +36,10 @@ def get_language_profiles():
 
 
 def update_all_movies():
-    jobs_queue.feed_jobs_pending_queue("Full disk scan...", "subtitles.indexer.movies", "movies_full_scan_subtitles",
-                                       is_progress=True)
+    job_id = jobs_queue.feed_jobs_pending_queue("Full disk scan for movies subtitles", "subtitles.indexer.movies",
+                                                "movies_full_scan_subtitles", is_progress=True)
+    while jobs_queue.get_job_status(job_id=job_id) in ['pending', 'running']:
+        time.sleep(1)
 
 
 def get_movie_file_size_from_db(movie_path):

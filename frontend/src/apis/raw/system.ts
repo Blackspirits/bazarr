@@ -87,7 +87,7 @@ class SystemApi extends BaseApi {
   }
 
   async deleteJobs(id: number) {
-    await this.post("/jobs", { id });
+    await this.delete("/jobs", { id });
   }
 
   async releases() {

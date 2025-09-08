@@ -32,6 +32,10 @@ import { useIsOnline } from "@/contexts/Online";
 import { Environment, useGotoHomepage } from "@/utilities";
 import styles from "./Header.module.scss";
 import Jobs = System.Jobs;
+import { faXmark } from "@fortawesome/free-solid-svg-icons";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { QueryKeys } from "@/apis/queries/keys";
+import api from "@/apis/raw";
 
 const AppHeader: FunctionComponent = () => {
   const { data: settings } = useSystemSettings();
@@ -47,8 +51,8 @@ const AppHeader: FunctionComponent = () => {
   const goHome = useGotoHomepage();
 
   const [
-    notificationsOpened,
-    { open: openNotifications, close: closeNotifications },
+    jobsManagerOpened,
+    { open: openJobsManager, close: closeJobsManager },
   ] = useDisclosure(false);
 
   const {
@@ -56,6 +60,16 @@ const AppHeader: FunctionComponent = () => {
     isLoading: jobsLoading,
     error: jobsError,
   } = useSystemJobs();
+  const client = useQueryClient();
+  const { mutate: deleteJob, isPending: isCancelling } = useMutation({
+    mutationKey: [QueryKeys.System, QueryKeys.Jobs, "delete"],
+    mutationFn: (id: number) => api.system.deleteJobs(id),
+    onSuccess: () => {
+      void client.invalidateQueries({
+        queryKey: [QueryKeys.System, QueryKeys.Jobs],
+      });
+    },
+  });
 
   return (
     <AppShell.Header p="md" className={styles.header}>
@@ -81,14 +95,14 @@ const AppHeader: FunctionComponent = () => {
         <Group gap="xs" justify="right" wrap="nowrap">
           <Search></Search>
           <Action
-            label="Notifications"
+            label="Jobs Manager"
             tooltip={{ position: "left", openDelay: 2000 }}
             icon={faBell}
             size="lg"
             // loading={Boolean(
             //   jobs?.filter((job) => job.status === "running").length,
             // )}
-            onClick={openNotifications}
+            onClick={openJobsManager}
           ></Action>
           <Menu>
             <Menu.Target>
@@ -123,9 +137,9 @@ const AppHeader: FunctionComponent = () => {
         </Group>
       </Group>
       <Drawer
-        opened={notificationsOpened}
-        onClose={closeNotifications}
-        title="Notifications"
+        opened={jobsManagerOpened}
+        onClose={closeJobsManager}
+        title="Jobs Manager"
         position="right"
         size="lg"
         overlayProps={{ opacity: 0.35, blur: 2 }}
@@ -194,16 +208,32 @@ const AppHeader: FunctionComponent = () => {
                               padding="sm"
                             >
                               <Grid columns={12}>
-                                <Grid.Col span={9}>
+                                <Grid.Col span={8}>
                                   <Text truncate="end">{job?.job_name}</Text>
                                 </Grid.Col>
-                                <Grid.Col span={3}>
+                                <Grid.Col span={4}>
                                   <Badge size="sm">
                                     <TimeAgo
                                       date={job?.last_run_time}
                                       minPeriod={60}
                                     />
                                   </Badge>
+                                  {status === "pending" && (
+                                    <Action
+                                      label="Cancel job"
+                                      tooltip={{
+                                        position: "left",
+                                        openDelay: 500,
+                                      }}
+                                      icon={faXmark}
+                                      size="sm"
+                                      c={"red"}
+                                      loading={isCancelling}
+                                      onClick={() =>
+                                        job?.job_id && deleteJob(job.job_id)
+                                      }
+                                    />
+                                  )}
                                 </Grid.Col>
                                 {job?.is_progress && (
                                   <Grid.Col span={12}>

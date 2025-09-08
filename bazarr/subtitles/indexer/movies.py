@@ -286,9 +286,11 @@ def movies_full_scan_subtitles(job_id=None, use_cache=None):
         select(TableMovies.path))\
         .all()
 
-    jobs_queue.update_job_progress(job_id=job_id, progress_max=len(movies), progress_message='Movies subtitles')
+    if job_id:
+        jobs_queue.update_job_progress(job_id=job_id, progress_max=len(movies), progress_message='Indexing')
     for i, movie in enumerate(movies, start=1):
-        jobs_queue.update_job_progress(job_id=job_id, progress_value=i)
+        if job_id:
+            jobs_queue.update_job_progress(job_id=job_id, progress_value=i)
         store_subtitles_movie(movie.path, path_mappings.path_replace_movie(movie.path), use_cache=use_cache)
 
     logging.info('BAZARR All existing movie subtitles indexed from disk.')
