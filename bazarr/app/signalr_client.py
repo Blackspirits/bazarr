@@ -29,7 +29,9 @@ from .get_args import args
 sonarr_queue = deque()
 radarr_queue = deque()
 
-last_event_data = None
+last_series_event_data = None
+last_episode_event_data = None
+last_movie_event_data = None
 
 
 class SonarrSignalrClientLegacy:
@@ -294,19 +296,20 @@ def dispatcher(data):
 
         if topic == 'series':
             logging.debug(f'Event received from Sonarr for series: {series_title} ({series_year})')
-            jobs_queue.feed_jobs_pending_queue(f'Update series {series_title} ({series_year})',
-                                               'sonarr.sync.series',
-                                               'update_one_series',
-                                               [],
-                                               {'series_id': media_id, 'action': action,
-                                                'defer_search': settings.sonarr.defer_search_signalr})
             if episodesChanged:
-                # this will happen if a season's monitored status is changed.
+                # this will happen if a series' or season's monitored status is changed.
                 jobs_queue.feed_jobs_pending_queue(f'Sync episodes for series {series_title} ({series_year})',
                                                    'sonarr.sync.episodes',
                                                    'sync_episodes',
                                                    [],
                                                    {'series_id': media_id,
+                                                    'defer_search': settings.sonarr.defer_search_signalr})
+            else:
+                jobs_queue.feed_jobs_pending_queue(f'Update series {series_title} ({series_year})',
+                                                   'sonarr.sync.series',
+                                                   'update_one_series',
+                                                   [],
+                                                   {'series_id': media_id, 'action': action,
                                                     'defer_search': settings.sonarr.defer_search_signalr})
         elif topic == 'episode':
             logging.debug(f'Event received from Sonarr for episode: {series_title} ({series_year}) - '
@@ -385,11 +388,24 @@ def feed_queue(data):
         data = filter_nested_dict(data)
 
         # check if event is duplicate from the previous one
-        global last_event_data
-        if data == last_event_data:
-            return
-        else:
-            last_event_data = data
+        if data['name'] == 'series':
+            global last_series_event_data
+            if data == last_series_event_data:
+                return
+            else:
+                last_series_event_data = data
+        elif data['name'] == 'episode':
+            global last_episode_event_data
+            if data == last_episode_event_data:
+                return
+            else:
+                last_episode_event_data = data
+        elif data['name'] == 'movie':
+            global last_movie_event_data
+            if data == last_movie_event_data:
+                return
+            else:
+                last_movie_event_data = data
 
         # if data is a dict and contain an event for series, episode or movie, we add it to the event queue
         if isinstance(data, dict) and 'name' in data:
