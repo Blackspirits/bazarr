@@ -208,7 +208,7 @@ const AppHeader: FunctionComponent = () => {
                               }
                               spin={status === "running"}
                             />
-                            <Title order={2}>{startCase(status)}</Title>
+                            <Title order={3}>{startCase(status)}</Title>
                           </Group>
                           <Text size="xs" c="dimmed">
                             {grouped[status as string].length} job
