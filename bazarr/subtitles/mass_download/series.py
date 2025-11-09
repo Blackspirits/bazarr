@@ -151,7 +151,7 @@ def episode_download_subtitles(no, job_id=None, job_sub_function=False, provider
                     send_notifications(episode.sonarrSeriesId, episode.sonarrEpisodeId, result.message)
 
         if not job_sub_function and job_id:
-            jobs_queue.update_job_progress(job_id=job_id, progress_value=1)
+            jobs_queue.update_job_progress(job_id=job_id, progress_value='max')
     else:
         logging.info("BAZARR All providers are throttled")
 
@@ -216,12 +216,12 @@ def episode_download_specific_subtitles(sonarr_series_id, sonarr_episode_id, lan
             store_subtitles(result.path, episodePath)
         else:
             event_stream(type='episode', payload=sonarr_episode_id)
-            jobs_queue.update_job_progress(job_id=job_id, progress_value=1,
+            jobs_queue.update_job_progress(job_id=job_id, progress_value='max',
                                            progress_message=f'No {language_str.upper()} subtitles found for '
                                                             f'{episode_long_title}')
             return '', 204
     except OSError:
         return 'Unable to save subtitles file. Permission or path mapping issue?', 409
     else:
-        jobs_queue.update_job_progress(job_id=job_id, progress_value=1)
+        jobs_queue.update_job_progress(job_id=job_id, progress_value='max')
         return '', 204

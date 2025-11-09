@@ -9,9 +9,28 @@ from app.jobs_queue import jobs_queue
 from subtitles.tools.subsyncer import SubSyncer
 
 
-def sync_subtitles(video_path, srt_path, srt_lang, forced, hi, percent_score, sonarr_series_id=None,
-                   sonarr_episode_id=None, radarr_id=None, job_id=None):
-    if not settings.subsync.use_subsync:
+def progress_update(progress_data):
+    jobs_queue.update_job_progress(job_id=progress_data['job_id'],
+                                   progress_value=progress_data['value'],
+                                   progress_max=progress_data['count'])
+
+
+def sync_subtitles(video_path,
+                   srt_path,
+                   srt_lang,
+                   forced,
+                   hi,
+                   percent_score,
+                   sonarr_series_id=None,
+                   sonarr_episode_id=None,
+                   radarr_id=None,
+                   job_id=None,
+                   max_offset_seconds=str(settings.subsync.max_offset_seconds),
+                   gss=settings.subsync.gss,
+                   no_fix_framerate=settings.subsync.no_fix_framerate,
+                   reference=None,
+                   force_sync=False):
+    if not settings.subsync.use_subsync and not force_sync:
         logging.debug('BAZARR automatic syncing is disabled in settings. Skipping sync routine.')
         return False
 
@@ -19,7 +38,7 @@ def sync_subtitles(video_path, srt_path, srt_lang, forced, hi, percent_score, so
         jobs_queue.add_progress_job_from_function("Syncing Subtitle")
         return False
 
-    jobs_queue.update_job_progress(job_id=job_id, progress_max=1, progress_message=f"Syncing {srt_path}")
+    jobs_queue.update_job_progress(job_id=job_id, progress_message=f"Syncing {srt_path}")
 
     if forced:
         logging.debug('BAZARR cannot sync forced subtitles. Skipping sync routine.')
@@ -33,7 +52,7 @@ def sync_subtitles(video_path, srt_path, srt_lang, forced, hi, percent_score, so
             use_subsync_threshold = settings.subsync.use_subsync_movie_threshold
             subsync_threshold = settings.subsync.subsync_movie_threshold
 
-        if not use_subsync_threshold or (use_subsync_threshold and percent_score < float(subsync_threshold)):
+        if not use_subsync_threshold or (use_subsync_threshold and percent_score <= float(subsync_threshold)):
             subsync = SubSyncer()
             sync_kwargs = {
                 'video_path': video_path,
@@ -41,13 +60,15 @@ def sync_subtitles(video_path, srt_path, srt_lang, forced, hi, percent_score, so
                 'srt_lang': srt_lang,
                 'forced': forced,
                 'hi': hi,
-                'max_offset_seconds': str(settings.subsync.max_offset_seconds),
-                'no_fix_framerate': settings.subsync.no_fix_framerate,
-                'gss': settings.subsync.gss,
-                'reference': None,  # means choose automatically within video file
+                'max_offset_seconds': max_offset_seconds,
+                'no_fix_framerate': no_fix_framerate,
+                'gss': gss,
+                'reference': reference,
                 'sonarr_series_id': sonarr_series_id,
                 'sonarr_episode_id': sonarr_episode_id,
                 'radarr_id': radarr_id,
+                'progress_callback': progress_update,
+                'job_id': job_id,
             }
             try:
                 subsync.sync(**sync_kwargs)
@@ -56,13 +77,13 @@ def sync_subtitles(video_path, srt_path, srt_lang, forced, hi, percent_score, so
                                   f'subtitle file: {srt_path}')
                 return False
             else:
+                jobs_queue.update_job_progress(job_id=job_id, progress_value="max")
                 return True
             finally:
-                jobs_queue.update_job_progress(job_id=job_id, progress_value=1)
                 del subsync
                 gc.collect()
         else:
             logging.debug(f"BAZARR subsync skipped because subtitles score isn't below this "
                           f"threshold value: {subsync_threshold}%")
-    jobs_queue.update_job_progress(job_id=job_id, progress_value=1)
+
     return False

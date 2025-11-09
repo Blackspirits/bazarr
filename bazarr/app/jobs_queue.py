@@ -9,6 +9,7 @@ import time
 from time import sleep
 from datetime import datetime
 from collections import deque
+from typing import Union
 
 from app.event_handler import event_stream
 
@@ -207,7 +208,8 @@ class JobsQueue:
         else:
             return None
 
-    def update_job_progress(self, job_id: int, progress_value=None, progress_max=None, progress_message: str = ""):
+    def update_job_progress(self, job_id: int, progress_value: Union[int, str, None] = None,
+                            progress_max: Union[int, None] = None, progress_message: str = ""):
         """
         Updates the progress value and message for a specific job within the running jobs queue. The function
         iterates through a queue of running jobs, identifies the matching job by its ID, and updates its progress
@@ -215,10 +217,11 @@ class JobsQueue:
 
         :param job_id: The unique identifier of the job to be updated.
         :type job_id: int
-        :param progress_value: The new progress value to be set for the job.
-        :type progress_value: int
+        :param progress_value: The new progress value to be set for the job. If 'max' is provided, progress_value will
+        equal progress_max.
+        :type progress_value: int or str or None
         :param progress_max: Maximum value of the job's progress.
-        :type progress_max: int
+        :type progress_max: int or None
         :param progress_message: An optional message providing additional details about the current progress.
         :type progress_message: str
         :return: Returns True if the job's progress was successfully updated, otherwise False.
@@ -228,6 +231,10 @@ class JobsQueue:
             if job.job_id == job_id:
                 payload = {"job_id": job.job_id}
                 if progress_value:
+                    if progress_value == 'max':
+                        progress_value = job.progress_max or 1
+                        job.progress_max = job.progress_max or 1
+                        payload["progress_max"] = job.progress_max
                     job.progress_value = progress_value
                     payload["progress_value"] = job.progress_value
                     payload["job_value"] = job.progress_value

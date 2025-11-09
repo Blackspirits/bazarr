@@ -100,7 +100,7 @@ class LingarrTranslatorService:
                                   radarr_id=self.radarr_id,
                                   result=result)
 
-            jobs_queue.update_job_progress(job_id=job_id, progress_value=1)
+            jobs_queue.update_job_progress(job_id=job_id, progress_value='max')
 
             return self.dest_srt_file
 

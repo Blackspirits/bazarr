@@ -161,11 +161,11 @@ def movie_download_specific_subtitles(radarr_id, language, hi, forced, job_id=No
             store_subtitles_movie(result.path, moviePath)
         else:
             event_stream(type='movie', payload=radarr_id)
-            jobs_queue.update_job_progress(job_id=job_id, progress_value=1,
+            jobs_queue.update_job_progress(job_id=job_id, progress_value='max',
                                            progress_message=f'No {language_str.upper()} subtitles found for {title}')
             return '', 204
     except OSError:
         return 'Unable to save subtitles file. Permission or path mapping issue?', 409
     else:
-        jobs_queue.update_job_progress(job_id=job_id, progress_value=1)
+        jobs_queue.update_job_progress(job_id=job_id, progress_value='max')
         return '', 204
