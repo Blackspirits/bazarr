@@ -19,6 +19,8 @@ declare namespace System {
   interface Jobs {
     job_id: number;
     job_name: string;
+    job_value: number;
+    job_message: string;
     status: string;
     last_run_time: string;
     is_progress: boolean;

@@ -229,25 +229,85 @@ class JobsQueue:
         """
         for job in self.jobs_running_queue:
             if job.job_id == job_id:
-                payload = {"job_id": job.job_id}
-                if progress_value:
-                    if progress_value == 'max':
-                        progress_value = job.progress_max or 1
-                        job.progress_max = job.progress_max or 1
-                        payload["progress_max"] = job.progress_max
-                    job.progress_value = progress_value
-                    payload["progress_value"] = job.progress_value
-                    payload["job_value"] = job.progress_value
-                    payload["job_message"] = job.progress_message
-                if progress_max:
-                    job.progress_max = progress_max
-                    payload["progress_max"] = job.progress_max
-                if progress_message:
-                    job.progress_message = progress_message
-                    payload["progress_message"] = job.progress_message
+                payload = self._build_progress_payload(job, progress_value, progress_max, progress_message)
                 event_stream(type='jobs', action='update', payload=payload)
                 return True
         return False
+    
+    @staticmethod
+    def _handle_progress_value_max(job):
+        """
+        Handles the special case when progress_value is 'max'.
+        Sets both progress_value and progress_max to the current max or 1.
+
+        :param job: The job object to update.
+        :return: Tuple of (progress_value, progress_max_changed)
+        """
+        max_value = job.progress_max or 1
+        job.progress_max = max_value
+        return max_value, True
+
+    @staticmethod
+    def _update_job_and_payload_for_progress(job, progress_value, payload):
+        """
+        Updates job progress value and adds progress-related fields to payload.
+
+        :param job: The job object to update.
+        :param progress_value: The progress value to set.
+        :param payload: The payload dictionary to update.
+        """
+        job.progress_value = progress_value
+        payload["progress_value"] = job.progress_value
+        payload["job_value"] = job.progress_value
+        payload["job_message"] = job.progress_message
+
+    @staticmethod
+    def _update_job_and_payload_for_message(job, progress_message, payload):
+        """
+        Updates job progress message and adds message-related fields to payload.
+
+        :param job: The job object to update.
+        :param progress_message: The progress message to set.
+        :param payload: The payload dictionary to update.
+        """
+        job.progress_message = progress_message
+        payload["progress_message"] = job.progress_message
+        payload["job_message"] = job.progress_message
+
+    @staticmethod
+    def _build_progress_payload(job, progress_value: Union[int, str, None],
+                                progress_max: Union[int, None], progress_message: str):
+        """
+        Builds the payload dictionary for job progress updates and updates job attributes.
+
+        :param job: The job object to update.
+        :param progress_value: The new progress value to be set for the job.
+        :type progress_value: int or str or None
+        :param progress_max: Maximum value of the job's progress.
+        :type progress_max: int or None
+        :param progress_message: An optional message providing additional details about the current progress.
+        :type progress_message: str
+        :return: Dictionary containing the payload for the event stream.
+        :rtype: dict
+        """
+        payload = {"job_id": job.job_id}
+        progress_max_updated = False
+
+        if progress_value:
+            if progress_value == 'max':
+                progress_value, progress_max_updated = JobsQueue._handle_progress_value_max(job)
+                payload["progress_max"] = job.progress_max
+
+            JobsQueue._update_job_and_payload_for_progress(job, progress_value, payload)
+
+        if progress_max and not progress_max_updated:
+            job.progress_max = progress_max
+            payload["progress_max"] = job.progress_max
+
+        if progress_message:
+            JobsQueue._update_job_and_payload_for_message(job, progress_message, payload)
+
+        return payload
 
     def add_progress_job_from_function(self, job_name: str, progress_max: int = 0,):
         """
