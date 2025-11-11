@@ -127,6 +127,10 @@ def wanted_search_missing_subtitles_series(job_id=None):
 
     count_episodes = len(episodes)
     jobs_queue.update_job_progress(job_id=job_id, progress_max=count_episodes)
+
+    if count_episodes == 0:
+        jobs_queue.update_job_progress(job_id=job_id, progress_value='max')
+
     for i, episode in enumerate(episodes, start=1):
         jobs_queue.update_job_progress(job_id=job_id, progress_value=i,
                                        progress_message=f'{episode.title} - S{episode.season:02d}E{episode.episode:02d}'

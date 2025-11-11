@@ -9,12 +9,6 @@ from app.jobs_queue import jobs_queue
 from subtitles.tools.subsyncer import SubSyncer
 
 
-def progress_update(progress_data):
-    jobs_queue.update_job_progress(job_id=progress_data['job_id'],
-                                   progress_value=progress_data['value'],
-                                   progress_max=progress_data['count'])
-
-
 def sync_subtitles(video_path,
                    srt_path,
                    srt_lang,
@@ -67,7 +61,9 @@ def sync_subtitles(video_path,
                 'sonarr_series_id': sonarr_series_id,
                 'sonarr_episode_id': sonarr_episode_id,
                 'radarr_id': radarr_id,
-                'progress_callback': progress_update,
+                'progress_callback': lambda x: jobs_queue.update_job_progress(job_id=x['job_id'],
+                                                                              progress_value=x['value'],
+                                                                              progress_max=x['count']),
                 'job_id': job_id,
             }
             try:

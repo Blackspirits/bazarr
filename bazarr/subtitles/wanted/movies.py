@@ -115,6 +115,10 @@ def wanted_search_missing_subtitles_movies(job_id=None):
 
     count_movies = len(movies)
     jobs_queue.update_job_progress(job_id=job_id, progress_max=count_movies)
+
+    if count_movies == 0:
+        jobs_queue.update_job_progress(job_id=job_id, progress_value='max')
+
     for i, movie in enumerate(movies, start=1):
         jobs_queue.update_job_progress(job_id=job_id, progress_value=i, progress_message=movie.title)
 

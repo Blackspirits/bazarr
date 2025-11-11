@@ -100,8 +100,11 @@ def upgrade_episodes_subtitles(job_id=None):
     episodes_data = [x for x in episodes_data if 'upgradable' in x and x['upgradable']]
 
     count_episode_to_upgrade = len(episodes_data)
-
     jobs_queue.update_job_progress(job_id=job_id, progress_max=count_episode_to_upgrade)
+
+    if count_episode_to_upgrade == 0:
+        jobs_queue.update_job_progress(job_id=job_id, progress_value='max')
+
     for i, episode in enumerate(episodes_data, start=1):
         providers_list = get_providers()
 
@@ -202,8 +205,11 @@ def upgrade_movies_subtitles(job_id=None):
     movies_data = [x for x in movies_data if 'upgradable' in x and x['upgradable']]
 
     count_movie_to_upgrade = len(movies_data)
-
     jobs_queue.update_job_progress(job_id=job_id, progress_max=count_movie_to_upgrade)
+
+    if count_movie_to_upgrade == 0:
+        jobs_queue.update_job_progress(job_id=job_id, progress_value='max')
+
     for i, movie in enumerate(movies_data, start=1):
         providers_list = get_providers()
 
