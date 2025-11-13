@@ -32,8 +32,11 @@ def sync_subtitles(video_path,
         jobs_queue.add_progress_job_from_function("Syncing Subtitle")
         return False
 
+    jobs_queue.update_job_progress(job_id=job_id, progress_message=f"Syncing {srt_path}")
+
     if forced:
         logging.debug('BAZARR cannot sync forced subtitles. Skipping sync routine.')
+        jobs_queue.update_job_progress(job_id=job_id, progress_value="max")
     else:
         logging.debug(f'BAZARR automatic syncing is enabled in settings. We\'ll try to sync this '
                       f'subtitles: {srt_path}.')

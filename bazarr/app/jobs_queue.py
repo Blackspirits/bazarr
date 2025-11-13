@@ -20,7 +20,7 @@ class Job:
 
     This class encapsulates information about a job, including its unique identifier,
     name, and the module or function it executes. It can also include optional
-    arguments and keyword arguments for job execution. Status of the job is also
+    arguments and keyword arguments for job execution. The status of the job is also
     tracked.
 
     :ivar job_id: Unique identifier of the job.
@@ -31,9 +31,9 @@ class Job:
     :type module: str
     :ivar func: The name of the function to execute the job.
     :type func: str
-    :ivar args: Positional arguments for the function, defaults to None.
+    :ivar args: Positional arguments for the function, it defaults to None.
     :type args: list, optional
-    :ivar kwargs: Keyword arguments for the function, defaults to None.
+    :ivar kwargs: Keyword arguments for the function, it defaults to None.
     :type kwargs: dict, optional
     :ivar status: Current status of the job, initialized to 'pending'.
     :type status: str
@@ -91,7 +91,7 @@ class JobsQueue:
     """
     def __init__(self):
         self.jobs_pending_queue = deque()
-        self.jobs_running_queue = deque()
+        self.jobs_running_queue = deque(maxlen=1)
         self.jobs_failed_queue = deque(maxlen=10)
         self.jobs_completed_queue = deque(maxlen=10)
         self.current_job_id = 0
@@ -138,7 +138,8 @@ class JobsQueue:
                 progress_max=progress_max,)
         )
         logging.debug(f"Task {job_name} ({new_job_id}) added to queue")
-        event_stream(type='jobs', action='update', payload={"job_id": new_job_id, "job_value": None})
+        event_stream(type='jobs', action='update', payload={"job_id": new_job_id, "progress_value": None,
+                                                            "status": "pending"})
 
         return new_job_id
 
@@ -148,7 +149,7 @@ class JobsQueue:
 
         This method retrieves job details from various job queues based on provided
         criteria. It can filter jobs by their `job_id` and/or their `status`. If no
-        `job_id` or `status` are provided, it returns details of all jobs across
+        `job_id` or `status` is provided, it returns details of all jobs across
         all queues.
 
         :param job_id: Optional; The unique ID of the job to filter the results.
@@ -233,46 +234,6 @@ class JobsQueue:
                 event_stream(type='jobs', action='update', payload=payload)
                 return True
         return False
-    
-    @staticmethod
-    def _handle_progress_value_max(job):
-        """
-        Handles the special case when progress_value is 'max'.
-        Sets both progress_value and progress_max to the current max or 1.
-
-        :param job: The job object to update.
-        :return: Tuple of (progress_value, progress_max_changed)
-        """
-        max_value = job.progress_max or 1
-        job.progress_max = max_value
-        return max_value, True
-
-    @staticmethod
-    def _update_job_and_payload_for_progress(job, progress_value, payload):
-        """
-        Updates job progress value and adds progress-related fields to payload.
-
-        :param job: The job object to update.
-        :param progress_value: The progress value to set.
-        :param payload: The payload dictionary to update.
-        """
-        job.progress_value = progress_value
-        payload["progress_value"] = job.progress_value
-        payload["job_value"] = job.progress_value
-        payload["job_message"] = job.progress_message
-
-    @staticmethod
-    def _update_job_and_payload_for_message(job, progress_message, payload):
-        """
-        Updates job progress message and adds message-related fields to payload.
-
-        :param job: The job object to update.
-        :param progress_message: The progress message to set.
-        :param payload: The payload dictionary to update.
-        """
-        job.progress_message = progress_message
-        payload["progress_message"] = job.progress_message
-        payload["job_message"] = job.progress_message
 
     @staticmethod
     def _build_progress_payload(job, progress_value: Union[int, str, None],
@@ -280,7 +241,7 @@ class JobsQueue:
         """
         Builds the payload dictionary for job progress updates and updates job attributes.
 
-        :param job: The job object to update.
+        :param job: The job instance to update.
         :param progress_value: The new progress value to be set for the job.
         :type progress_value: int or str or None
         :param progress_max: Maximum value of the job's progress.
@@ -295,17 +256,20 @@ class JobsQueue:
 
         if progress_value:
             if progress_value == 'max':
-                progress_value, progress_max_updated = JobsQueue._handle_progress_value_max(job)
-                payload["progress_max"] = job.progress_max
-
-            JobsQueue._update_job_and_payload_for_progress(job, progress_value, payload)
+                progress_value = job.progress_max or 1
+                job.progress_value = job.progress_max = progress_value
+                progress_max_updated = True
+            else:
+                job.progress_value = progress_value
+        payload["progress_value"] = job.progress_value
 
         if progress_max and not progress_max_updated:
             job.progress_max = progress_max
-            payload["progress_max"] = job.progress_max
+        payload["progress_max"] = job.progress_max
 
         if progress_message:
-            JobsQueue._update_job_and_payload_for_message(job, progress_message, payload)
+            job.progress_message = progress_message
+        payload["progress_message"] = job.progress_message
 
         return payload
 
@@ -352,9 +316,8 @@ class JobsQueue:
         del current_frame, caller_frame, caller_code, caller_signature, caller_locals, bound_arguments
 
         # Feed the job to the pending queue
-        job_id = self.feed_jobs_pending_queue(job_name=job_name, module=parent_function_path,
-                                              func=parent_function_name, kwargs=arguments,
-                                              is_progress=True, progress_max=progress_max)
+        job_id = self.feed_jobs_pending_queue(job_name=job_name, module=parent_function_path, func=parent_function_name,
+                                              kwargs=arguments, is_progress=True, progress_max=progress_max)
 
         # Wait for the job to complete or fail
         while jobs_queue.get_job_status(job_id=job_id) in ['pending', 'running']:
@@ -386,7 +349,7 @@ class JobsQueue:
                     return False
                 else:
                     logging.debug(f"Task {job.job_name} ({job.job_id}) removed from queue")
-                    event_stream(type='jobs', action='delete', payload={"job_id": job.job_id, "job_value": None})
+                    event_stream(type='jobs', action='delete', payload={"job_id": job.job_id})
                     return True
         return False
 
@@ -416,13 +379,18 @@ class JobsQueue:
                     try:
                         job.status = 'running'
                         job.last_run_time = datetime.now()
-                        if not 'job_id' in job.kwargs or not job.kwargs['job_id']:
+                        if 'job_id' not in job.kwargs or not job.kwargs['job_id']:
                             job.kwargs['job_id'] = job.job_id
                         self.jobs_running_queue.append(job)
-                        # sending event to update status of progress jobs
-                        event_stream(type='jobs', action='update',
-                                     payload={"job_id": job.job_id,
-                                              "job_value": job.progress_value if job.is_progress else None})
+
+                        # sending event to update the status of progress jobs
+                        payload = {"job_id": job.job_id, "status": job.status}
+                        if job.is_progress:
+                            payload["progress_value"] = None
+                            payload["progress_max"] = job.progress_max
+                            payload["progress_message"] = job.progress_message
+                        event_stream(type='jobs', action='update', payload=payload)
+
                         logging.debug(f"Running job {job.job_name} (id {job.job_id}): "
                                       f"{job.module}.{job.func}({job.args}, {job.kwargs})")
                         job.job_returned_value = (getattr(importlib.import_module(job.module), job.func)
@@ -438,8 +406,8 @@ class JobsQueue:
                         self.jobs_completed_queue.append(job)
                     finally:
                         self.jobs_running_queue.remove(job)
-                        event_stream(type='jobs', action='update', payload={"job_id": job.job_id, "job_value": None})
-                        # job_value being None force an API call to update the whole job payload.
+                        event_stream(type='jobs', action='update', payload={"job_id": job.job_id})
+                        # progress_value being missing force an API call to update the whole job payload.
             else:
                 sleep(0.1)
 

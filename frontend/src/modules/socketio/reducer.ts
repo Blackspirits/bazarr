@@ -217,9 +217,11 @@ export function createDefaultReducer(): SocketIO.Reducer[] {
         const MAX_JOBS_IN_CACHE = 100;
 
         items.forEach((payload) => {
-          // Payload is always a JSON string: {"job_id": <number>, "job_value": <number|null>, "job_message": <string>}
-          // If job_value is present (not null/undefined), apply (with job_message) directly to cache without API call
-          if (isNumber(payload.job_value)) {
+          // Payload is always a JSON string:
+          // {"job_id": <number>, "progress_value": <number|null>, "progress_message": <string>, "status": <string>}
+          // If progress_value is present (not null/undefined), apply (with progress_message and status) directly to
+          // cache without an API call
+          if (isNumber(payload.progress_value)) {
             const current = queryClient.getQueryData<LooseObject[]>(keys) || [];
             const idx = current.findIndex((j) => j.job_id === payload.job_id);
 
@@ -230,10 +232,11 @@ export function createDefaultReducer(): SocketIO.Reducer[] {
             const updatedJob = {
               ...initialJob,
               status: payload.status,
-              // eslint-disable-next-line camelcase
-              progress_value: payload.job_value,
-              // eslint-disable-next-line camelcase
-              progress_message: payload.job_message,
+              /* eslint-disable camelcase */
+              progress_value: payload.progress_value,
+              progress_max: payload.progress_max,
+              progress_message: payload.progress_message,
+              /* eslint-enable camelcase */
             };
 
             const next =
@@ -254,16 +257,16 @@ export function createDefaultReducer(): SocketIO.Reducer[] {
             queryClient.setQueryData(keys, trimmed);
             LOG(
               "info",
-              "Applied inline job_value and job_message to cache",
+              "Applied inline payload content to cache",
               payload.job_id,
             );
             return;
           }
 
-          // job_value is null/undefined -> refresh this job via API
+          // progress_value is null/undefined -> refresh this job via API
           LOG(
             "info",
-            "job_value missing; fetching job from API",
+            "progress_value missing; fetching job from API",
             payload.job_id,
           );
           void api.system
