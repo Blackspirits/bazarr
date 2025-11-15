@@ -273,19 +273,19 @@ class JobsQueue:
 
         return payload
 
-    def add_progress_job_from_function(self, job_name: str, progress_max: int = 0,):
+    def add_job_from_function(self, job_name: str, is_progress: bool, progress_max: int = 0):
         """
-        Adds a progress tracking job from the context of the calling function. This function
-        inspects the calling function's metadata, including its name, file path, and arguments,
-        to create and enqueue a progress job. The job remains in a pending or running state
-        while being processed and waits for its completion or failure.
+        Adds a job to the pending queue using the details of the calling function. The job is then executed, and the
+        method waits until the job is completed or has failed.
 
-        :param job_name: The name of the job to be added.
+        :param job_name: Name of the job to be added.
         :type job_name: str
-        :param progress_max: The maximum progress value for the job. Defaults to 0.
+        :param is_progress: Flag indicating whether the progress of the job should be tracked.
+        :type is_progress: bool
+        :param progress_max: Maximum progress value for the job, default is 0.
         :type progress_max: int
-        :return: The unique job identifier of the added progress job.
-        :rtype: int
+        :return: ID of the added job.
+        :rtype: Any
         """
         # Get the current frame
         current_frame = inspect.currentframe()
@@ -317,11 +317,11 @@ class JobsQueue:
 
         # Feed the job to the pending queue
         job_id = self.feed_jobs_pending_queue(job_name=job_name, module=parent_function_path, func=parent_function_name,
-                                              kwargs=arguments, is_progress=True, progress_max=progress_max)
+                                              kwargs=arguments, is_progress=is_progress, progress_max=progress_max)
 
         # Wait for the job to complete or fail
         while jobs_queue.get_job_status(job_id=job_id) in ['pending', 'running']:
-            time.sleep(1)
+            time.sleep(0.1)
 
         return job_id
 

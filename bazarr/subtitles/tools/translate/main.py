@@ -14,8 +14,9 @@ from app.jobs_queue import jobs_queue
 def translate_subtitles_file(video_path, source_srt_file, from_lang, to_lang, forced, hi,
                              media_type, sonarr_series_id, sonarr_episode_id, radarr_id, job_id=None):
     if not job_id:
-        jobs_queue.add_progress_job_from_function(f'Translating from {from_lang.upper()} to {to_lang.upper()} using '
-                                                  f'{settings.translator.translator_type.replace("_", " ").title()}')
+        jobs_queue.add_job_from_function(f'Translating from {from_lang.upper()} to {to_lang.upper()} using '
+                                         f'{settings.translator.translator_type.replace("_", " ").title()}',
+                                         is_progress=True)
         return
 
     try:

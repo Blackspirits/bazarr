@@ -83,7 +83,7 @@ def add_movie(added_movie):
 
 def update_movies(job_id=None):
     if not job_id:
-        jobs_queue.add_progress_job_from_function("Syncing movies with Radarr")
+        jobs_queue.add_job_from_function("Syncing movies with Radarr", is_progress=True)
         return
 
     check_radarr_rootfolder()

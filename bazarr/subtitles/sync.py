@@ -29,7 +29,7 @@ def sync_subtitles(video_path,
         return False
 
     if not job_id:
-        jobs_queue.add_progress_job_from_function("Syncing Subtitle")
+        jobs_queue.add_job_from_function("Syncing Subtitle", is_progress=True)
         return False
 
     jobs_queue.update_job_progress(job_id=job_id, progress_message=f"Syncing {srt_path}")

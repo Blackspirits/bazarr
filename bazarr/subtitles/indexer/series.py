@@ -284,7 +284,7 @@ def list_missing_subtitles(no=None, epno=None):
 
 def series_full_scan_subtitles(job_id=None, use_cache=None):
     if not job_id:
-        jobs_queue.add_progress_job_from_function("Full disk scan for episodes subtitles")
+        jobs_queue.add_job_from_function("Full disk scan for episodes subtitles", is_progress=True)
         return
 
     if use_cache is None:

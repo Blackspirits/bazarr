@@ -99,7 +99,7 @@ def wanted_download_subtitles_movie(radarr_id, job_id=None):
 
 def wanted_search_missing_subtitles_movies(job_id=None):
     if not job_id:
-        jobs_queue.add_progress_job_from_function("Searching for missing movies subtitles")
+        jobs_queue.add_job_from_function("Searching for missing movies subtitles", is_progress=True)
         return
 
     conditions = [(TableMovies.missing_subtitles.is_not(None)),

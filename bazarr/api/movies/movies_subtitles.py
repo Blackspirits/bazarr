@@ -1,22 +1,18 @@
 # coding=utf-8
 
 import os
-import logging
 import time
 
 from flask_restx import Resource, Namespace, reqparse
 from subliminal_patch.core import SUBTITLE_EXTENSIONS
 from werkzeug.datastructures import FileStorage
 
-from app.database import TableMovies, get_audio_profile_languages, get_profile_id, database, select
+from app.database import TableMovies, get_profile_id, database, select
 from utilities.path_mappings import path_mappings
 from subtitles.upload import manual_upload_subtitle
 from subtitles.mass_download.movies import movie_download_specific_subtitles
 from subtitles.download import generate_subtitles
 from subtitles.tools.delete import delete_subtitles
-from radarr.history import history_log_movie
-from app.notifier import send_notifications_movie
-from subtitles.indexer.movies import store_subtitles_movie
 from app.event_handler import event_stream
 from app.config import settings
 from app.jobs_queue import jobs_queue
@@ -75,6 +71,12 @@ class MoviesSubtitles(Resource):
         """Upload a movie subtitles"""
         # TODO: Support Multiply Upload
         args = self.post_request_parser.parse_args()
+
+        _, ext = os.path.splitext(args.get('file').filename)
+
+        if not isinstance(ext, str) or ext.lower() not in SUBTITLE_EXTENSIONS:
+            raise ValueError('A subtitle of an invalid format was uploaded.')
+
         radarrId = args.get('radarrid')
         movieInfo = database.execute(
             select(TableMovies.path, TableMovies.audio_language)
@@ -89,46 +91,20 @@ class MoviesSubtitles(Resource):
         if not os.path.exists(moviePath):
             return 'Movie file not found. Path mapping issue?', 500
 
-        audio_language = get_audio_profile_languages(movieInfo.audio_language)
-        if len(audio_language) and isinstance(audio_language[0], dict):
-            audio_language = audio_language[0]
-        else:
-            audio_language = {'name': '', 'code2': '', 'code3': ''}
+        job_id = manual_upload_subtitle(path=moviePath,
+                                        language=args.get('language'),
+                                        forced=True if args.get('forced') == 'true' else False,
+                                        hi=True if args.get('hi') == 'true' else False,
+                                        media_type='movie',
+                                        subtitle=args.get('file'),
+                                        audio_language=movieInfo.audio_language,
+                                        radarrId=radarrId)
 
-        language = args.get('language')
-        forced = args.get('forced') == 'true'
-        hi = args.get('hi') == 'true'
-        subFile = args.get('file')
+        # Wait for the job to complete or fail
+        while jobs_queue.get_job_status(job_id=job_id) in ['pending', 'running']:
+            time.sleep(1)
 
-        _, ext = os.path.splitext(subFile.filename)
-
-        if not isinstance(ext, str) or ext.lower() not in SUBTITLE_EXTENSIONS:
-            raise ValueError('A subtitle of an invalid format was uploaded.')
-
-        try:
-            result = manual_upload_subtitle(path=moviePath,
-                                            language=language,
-                                            forced=forced,
-                                            hi=hi,
-                                            media_type='movie',
-                                            subtitle=subFile,
-                                            audio_language=audio_language)
-
-            if not result:
-                logging.debug(f"BAZARR unable to process subtitles for this movie: {moviePath}")
-            else:
-                if isinstance(result, tuple) and len(result):
-                    result = result[0]
-                provider = "manual"
-                score = 120
-                history_log_movie(4, radarrId, result, fake_provider=provider, fake_score=score)
-                if not settings.general.dont_notify_manual_actions:
-                    send_notifications_movie(radarrId, result.message)
-                store_subtitles_movie(result.path, moviePath)
-        except OSError:
-            return 'Unable to save subtitles file. Permission or path mapping issue?', 409
-        else:
-            return '', 204
+        return jobs_queue.get_job_returned_value(job_id=job_id)
 
     # DELETE: Delete Subtitles
     delete_request_parser = reqparse.RequestParser()

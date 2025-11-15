@@ -23,7 +23,7 @@ from ..download import generate_subtitles
 
 def movies_download_subtitles(no, job_id=None, job_sub_function=False):
     if not job_sub_function and not job_id:
-        jobs_queue.add_progress_job_from_function("Searching missing subtitles")
+        jobs_queue.add_job_from_function("Searching missing subtitles", is_progress=True)
         return
 
     conditions = [(TableMovies.radarrId == no)]
@@ -110,7 +110,7 @@ def movies_download_subtitles(no, job_id=None, job_sub_function=False):
 
 def movie_download_specific_subtitles(radarr_id, language, hi, forced, job_id=None):
     if not job_id:
-        return jobs_queue.add_progress_job_from_function("Searching subtitles", progress_max=1)
+        return jobs_queue.add_job_from_function("Searching subtitles", progress_max=1, is_progress=True)
 
     movieInfo = database.execute(
         select(

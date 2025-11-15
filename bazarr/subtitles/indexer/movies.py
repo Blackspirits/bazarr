@@ -279,7 +279,7 @@ def list_missing_subtitles_movies(no=None):
 
 def movies_full_scan_subtitles(job_id=None, use_cache=None):
     if not job_id:
-        jobs_queue.add_progress_job_from_function("Full disk scan for movies subtitles")
+        jobs_queue.add_job_from_function("Full disk scan for movies subtitles", is_progress=True)
         return
 
     if use_cache is None:

@@ -43,7 +43,7 @@ def get_series_monitored_table():
 
 def update_series(job_id=None):
     if not job_id:
-        jobs_queue.add_progress_job_from_function("Syncing series with Sonarr")
+        jobs_queue.add_job_from_function("Syncing series with Sonarr", is_progress=True)
         return
 
     check_sonarr_rootfolder()
