@@ -98,7 +98,7 @@ class SubSyncer:
 
     def sync(self, video_path, srt_path, srt_lang, hi, forced,
              max_offset_seconds, no_fix_framerate, gss, reference=None, sonarr_series_id=None, sonarr_episode_id=None,
-             radarr_id=None, progress_callback=None, job_id=None):
+             radarr_id=None, progress_callback=None, job_id=None, force_sync=False):
         self.reference = video_path
         self.srtin = srt_path
         self.progress_callback = progress_callback
@@ -131,6 +131,10 @@ class SubSyncer:
 
         self.ffmpeg_path = os.path.dirname(ffmpeg_exe)
         try:
+            if reference and reference != video_path and os.path.isfile(reference):
+                # subtitles path provided
+                self.reference = reference
+
             unparsed_args = [self.reference, '-i', self.srtin, '-o', self.srtout, '--ffmpegpath', self.ffmpeg_path,
                              '--vad', self.vad, '--log-dir-path', self.log_dir_path, '--max-offset-seconds',
                              max_offset_seconds, '--output-encoding', 'same']
@@ -141,14 +145,11 @@ class SubSyncer:
             if gss:
                 unparsed_args.append('--gss')
 
-            if reference and reference != video_path and os.path.isfile(reference):
-                # subtitles path provided
-                self.reference = reference
-            elif reference and isinstance(reference, str) and len(reference) == 3 and reference[:2] in ['a:', 's:']:
+            if reference and isinstance(reference, str) and len(reference) == 3 and reference[:2] in ['a:', 's:']:
                 # audio or subtitles track id provided
                 unparsed_args.append('--reference-stream')
                 unparsed_args.append(reference)
-            elif settings.subsync.force_audio:
+            elif settings.subsync.force_audio and not force_sync:
                 # nothing else match and force audio settings is enabled
                 unparsed_args.append('--reference-stream')
                 unparsed_args.append('a:0')

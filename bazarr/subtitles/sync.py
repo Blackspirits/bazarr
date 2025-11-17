@@ -67,6 +67,7 @@ def sync_subtitles(video_path,
                                                                               progress_max=x['count'],
                                                                               progress_message=f"Syncing {srt_path}"),
                 'job_id': job_id,
+                'force_sync': force_sync,
             }
             try:
                 subsync.sync(**sync_kwargs)
