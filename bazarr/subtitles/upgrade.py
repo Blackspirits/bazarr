@@ -148,7 +148,7 @@ def upgrade_episodes_subtitles(job_id=None, wait_for_completion=False):
                 result = result[0]
             store_subtitles(episode['video_path'], path_mappings.path_replace(episode['video_path']))
             history_log(3, episode['sonarrSeriesId'], episode['sonarrEpisodeId'], result,
-                        upgraded_from_id=episode['original_id'])
+                        upgraded_from_id=episode['original_id'] or episode['id'])  # we use or to handle None values on initial upgrade
             send_notifications(episode['sonarrSeriesId'], episode['sonarrEpisodeId'], result.message)
             event_stream(type="episode-history")
     jobs_queue.update_job_name(job_id=job_id, new_job_name='Tried to upgrade episodes subtitles')
@@ -253,7 +253,7 @@ def upgrade_movies_subtitles(job_id=None, wait_for_completion=False):
                 result = result[0]
             store_subtitles_movie(movie['video_path'],
                                   path_mappings.path_replace_movie(movie['video_path']))
-            history_log_movie(3, movie['radarrId'], result, upgraded_from_id=movie['original_id'])
+            history_log_movie(3, movie['radarrId'], result, upgraded_from_id=movie['original_id'] or movie['id'])  # we use or to handle None values on initial upgrade
             send_notifications_movie(movie['radarrId'], result.message)
             event_stream(type="movie-history")
     jobs_queue.update_job_name(job_id=job_id, new_job_name='Tried to upgrade movies subtitles')
