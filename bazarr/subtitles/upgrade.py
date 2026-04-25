@@ -294,17 +294,18 @@ def get_upgradable_episode_subtitles(history_id_list=None):
         logging.debug("Subtitles upgrade is disabled so we wont go further.")
         return {}
 
+    minimum_timestamp, query_actions = get_queries_condition_parameters()
+    logging.debug(f"Minimum timestamp used for subtitles upgrade: {minimum_timestamp}")
+    logging.debug(f"These actions are considered for subtitles upgrade: {query_actions}")
+
     logging.debug("Determining upgradable episode subtitles")
     max_id_timestamp = select(TableHistory.video_path,
                               TableHistory.language,
                               func.max(TableHistory.timestamp).label('timestamp')) \
         .group_by(TableHistory.video_path, TableHistory.language) \
+        .where(TableHistory.action.in_(query_actions)) \
         .distinct() \
         .subquery()
-
-    minimum_timestamp, query_actions = get_queries_condition_parameters()
-    logging.debug(f"Minimum timestamp used for subtitles upgrade: {minimum_timestamp}")
-    logging.debug(f"These actions are considered for subtitles upgrade: {query_actions}")
 
     upgradable_episodes_conditions = [(TableHistory.action.in_(query_actions)),
                                       (TableHistory.timestamp > minimum_timestamp),
@@ -361,17 +362,18 @@ def get_upgradable_movies_subtitles(history_id_list=None):
         logging.debug("Subtitles upgrade is disabled so we won't go further.")
         return {}
 
+    minimum_timestamp, query_actions = get_queries_condition_parameters()
+    logging.debug(f"Minimum timestamp used for subtitles upgrade: {minimum_timestamp}")
+    logging.debug(f"These actions are considered for subtitles upgrade: {query_actions}")
+
     logging.debug("Determining upgradable movie subtitles")
     max_id_timestamp = select(TableHistoryMovie.video_path,
                               TableHistoryMovie.language,
                               func.max(TableHistoryMovie.timestamp).label('timestamp')) \
         .group_by(TableHistoryMovie.video_path, TableHistoryMovie.language) \
+        .where(TableHistoryMovie.action.in_(query_actions)) \
         .distinct() \
         .subquery()
-
-    minimum_timestamp, query_actions = get_queries_condition_parameters()
-    logging.debug(f"Minimum timestamp used for subtitles upgrade: {minimum_timestamp}")
-    logging.debug(f"These actions are considered for subtitles upgrade: {query_actions}")
 
     upgradable_movies_conditions = [(TableHistoryMovie.action.in_(query_actions)),
                                     (TableHistoryMovie.timestamp > minimum_timestamp),
