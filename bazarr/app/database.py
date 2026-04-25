@@ -89,6 +89,7 @@ else:
         cursor.execute("PRAGMA journal_mode=WAL")
         cursor.execute("PRAGMA synchronous=FULL")
         cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.execute("PRAGMA busy_timeout=60000")
         cursor.close()
 
 session_factory = sessionmaker(bind=engine)
