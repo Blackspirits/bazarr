@@ -7,9 +7,8 @@ import logging
 import os
 import re
 from time import sleep
-from zipfile import ZipFile
-
-import rarfile
+from zipfile import ZipFile, is_zipfile
+from rarfile import RarFile, is_rarfile
 from bs4 import BeautifulSoup
 from guessit import guessit
 from requests.exceptions import HTTPError, RequestException
@@ -18,13 +17,13 @@ from subzero.language import Language
 from subliminal.exceptions import (
     AuthenticationError,
     ConfigurationError,
-    DownloadLimitExceeded,
+    ProviderError,
     ServiceUnavailable,
 )
-from subliminal.subtitle import SUBTITLE_EXTENSIONS, fix_line_ending
+from subliminal.subtitle import fix_line_ending
 from subliminal.video import Episode, Movie
 
-from subliminal_patch.score import get_scores
+from subliminal_patch.providers.mixins import ProviderSubtitleArchiveMixin
 from subliminal_patch.subtitle import Subtitle, guess_matches
 
 from . import Provider, reinitialize_on_error
@@ -78,6 +77,20 @@ class PipocasSubtitle(Subtitle):
         self.video = video
         self.sub_id = sub_id
         self.release = release or ""
+        self.releases = self.release_info = self.release
+        self.matches = set()
+
+        if isinstance(video, Episode):
+            self.season = video.season
+            self.episode = video.episode
+            self.asked_for_episode = video.episode
+        else:
+            self.season = None
+            self.episode = None
+            self.asked_for_episode = None
+
+        self.asked_for_release_group = getattr(video, "release_group", None)
+        self.is_pack = False
         self.hits = hits or 0
         self.uploader = uploader or "pipocas-bot"
         self.user_score = score_stars or 0
@@ -114,10 +127,11 @@ class PipocasSubtitle(Subtitle):
         except Exception:
             pass
 
+        self.matches = matches
         return matches
 
 
-class PipocasProvider(Provider):
+class PipocasProvider(Provider, ProviderSubtitleArchiveMixin):
     """pipocas.tv provider for subliminal_patch."""
 
     languages = {
@@ -343,7 +357,7 @@ class PipocasProvider(Provider):
         """Download subtitle and fill subtitle.content."""
         logger.info("Pipocas.tv :: downloading %s", subtitle.page_link)
 
-        res = self.session.get(subtitle.page_link)
+        res = self.session.get(subtitle.page_link, timeout=10)
         res.raise_for_status()
 
         if "Cria uma conta" in res.text:
@@ -353,64 +367,31 @@ class PipocasProvider(Provider):
         if not data:
             raise ServiceUnavailable("Pipocas.tv :: empty download response")
 
-        header = data[:4]
+        archive_stream = io.BytesIO(data)
 
-        # Detect RAR / ZIP by magic bytes (like Kodi addon)
-        if header.startswith(b"Rar!"):
-            archive = rarfile.RarFile(io.BytesIO(data))
-        elif header.startswith(b"PK"):
-            archive = ZipFile(io.BytesIO(data))
+        if is_rarfile(archive_stream):
+            archive_stream.seek(0)
+            archive = RarFile(archive_stream)
         else:
-            subtitle.content = fix_line_ending(data)
-            subtitle.normalize()
-            return subtitle
+            archive_stream.seek(0)
 
-        content_bytes = self._extract_best_from_archive(archive, subtitle)
-        if not content_bytes:
+            if is_zipfile(archive_stream):
+                archive_stream.seek(0)
+                archive = ZipFile(archive_stream)
+            else:
+                subtitle.content = fix_line_ending(data)
+
+                if subtitle.is_valid():
+                    subtitle.normalize()
+                    return subtitle
+
+                subtitle.content = None
+                raise ProviderError("Pipocas.tv :: unidentified archive type")
+
+        subtitle.content = self.get_subtitle_from_archive(subtitle, archive)
+
+        if not subtitle.content:
             raise ServiceUnavailable("Pipocas.tv :: no suitable subtitle file in archive")
 
-        subtitle.content = fix_line_ending(content_bytes)
         subtitle.normalize()
         return subtitle
-
-    def _extract_best_from_archive(self, archive, subtitle):
-        """Pick best matching file from archive using guessit + matches."""
-        exts = list(SUBTITLE_EXTENSIONS)
-        if ".txt" in exts:
-            exts.remove(".txt")
-        allowed_exts = tuple(exts)
-
-        scores = get_scores(subtitle.video)
-        best_name = None
-        best_score = -1
-
-        for name in archive.namelist():
-            if os.path.basename(name).startswith("."):
-                continue
-            if not name.lower().endswith(allowed_exts):
-                continue
-
-            try:
-                guessed = guessit(os.path.basename(name))
-            except Exception:
-                guessed = {}
-
-            if isinstance(subtitle.video, Episode):
-                season = guessed.get("season")
-                episode = guessed.get("episode")
-                if season is not None and episode is not None:
-                    if season != subtitle.video.season or episode != subtitle.video.episode:
-                        continue
-
-            matches = guess_matches(subtitle.video, guessed)
-            score = sum(scores.get(m, 0) for m in matches)
-
-            if score > best_score:
-                best_score = score
-                best_name = name
-
-        if best_name is None or best_score <= 0:
-            return None
-
-        logger.debug("Pipocas.tv :: using '%s' from archive (score %s)", best_name, best_score)
-        return archive.read(best_name)
