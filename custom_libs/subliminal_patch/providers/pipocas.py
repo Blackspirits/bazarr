@@ -370,28 +370,21 @@ class PipocasProvider(Provider, ProviderSubtitleArchiveMixin):
         archive_stream = io.BytesIO(data)
 
         if is_rarfile(archive_stream):
-            archive_stream.seek(0)
             archive = RarFile(archive_stream)
+        elif is_zipfile(archive_stream):
+            archive = ZipFile(archive_stream)
         else:
-            archive_stream.seek(0)
+            subtitle.content = fix_line_ending(data)
 
-            if is_zipfile(archive_stream):
-                archive_stream.seek(0)
-                archive = ZipFile(archive_stream)
-            else:
-                subtitle.content = fix_line_ending(data)
+            if subtitle.is_valid():
+                return subtitle
 
-                if subtitle.is_valid():
-                    subtitle.normalize()
-                    return subtitle
-
-                subtitle.content = None
-                raise ProviderError("Pipocas.tv :: unidentified archive type")
+            subtitle.content = None
+            raise ProviderError("Pipocas.tv :: unidentified archive type")
 
         subtitle.content = self.get_subtitle_from_archive(subtitle, archive)
 
         if not subtitle.content:
             raise ServiceUnavailable("Pipocas.tv :: no suitable subtitle file in archive")
 
-        subtitle.normalize()
         return subtitle
