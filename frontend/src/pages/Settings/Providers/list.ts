@@ -302,7 +302,8 @@ export const ProviderList: Readonly<ProviderInfo[]> = [
   {
     key: "pipocas",
     name: "Pipocas.tv",
-    description: "Portuguese / Brazilian / English / Spanish Subtitles Provider",
+    description:
+      "Portuguese / Brazilian / English / Spanish Subtitles Provider",
     inputs: [
       {
         type: "text",
