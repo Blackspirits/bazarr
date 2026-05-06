@@ -2,10 +2,12 @@ import React, { FunctionComponent } from "react";
 import { Code, Space, Table, Text as MantineText } from "@mantine/core";
 import {
   Check,
+  Chips,
   CollapseBox,
   Layout,
   Message,
   MultiSelector,
+  Number,
   Section,
   Selector,
   Slider,
@@ -152,6 +154,7 @@ const SettingsSubtitlesView: FunctionComponent = () => {
           label="Hearing-impaired subtitles extension"
           options={hiExtensionOptions}
           settingKey="settings-general-hi_extension"
+          allowDeselect={false}
         ></Selector>
         <Message>
           What file extension to use when saving hearing-impaired subtitles to
@@ -223,6 +226,39 @@ const SettingsSubtitlesView: FunctionComponent = () => {
             Hide Embedded Subtitles for languages that are not currently
             desired.
           </Message>
+        </CollapseBox>
+      </Section>
+      <Section header="Whisper As Fallback">
+        <Check
+          label="Use Whisper as Fallback for Automated Searches"
+          settingKey="settings-general-use_whisper_fallback"
+        ></Check>
+        <CollapseBox settingKey={"settings-general-use_whisper_fallback"}>
+          <Message>
+            When enabled, Bazarr will ignore the Radarr/Sonarr minimum score and
+            fall back to a Whisper generated subtitle when no provider reaches
+            that minimum score. To avoid overloading Whisper, this fallback is
+            used only during automated tasks like Search for Missing Movie
+            Subtitles and Search for Missing Series Subtitles, or by invoking
+            Search from the Wanted menu. You are responsible for ensuring that
+            only one Whisper transcription or translation runs at a time, unless
+            your hardware can handle more.
+          </Message>
+        </CollapseBox>
+        <CollapseBox settingKey={"settings-general-use_whisper_fallback"}>
+          <Check
+            label="Use Whisper as Fallback for Single Series Searches"
+            settingKey="settings-general-use_whisper_fallback_series"
+          ></Check>
+          <CollapseBox
+            settingKey={"settings-general-use_whisper_fallback_series"}
+          >
+            <Message>
+              When enabled, Bazarr will also use Whisper fallback for single
+              series subtitle searches. All of the warnings about overloading
+              Whisper from the previous setting also apply to this one.
+            </Message>
+          </CollapseBox>
         </CollapseBox>
       </Section>
       <Section header="Upgrading Subtitles">
@@ -324,6 +360,12 @@ const SettingsSubtitlesView: FunctionComponent = () => {
           Removes all possible style tags from the subtitle, such as font, bold,
           color etc.
         </Message>
+        <Check
+          label="Remove Emoji"
+          settingOptions={{ onLoaded: SubzeroModification("emoji") }}
+          settingKey="subzero-emoji"
+        ></Check>
+        <Message>Removes emoji characters from subtitles.</Message>
         <Check
           label="OCR Fixes"
           settingOptions={{ onLoaded: SubzeroModification("OCR_fixes") }}
@@ -542,12 +584,31 @@ const SettingsSubtitlesView: FunctionComponent = () => {
             label="Gemini model"
             settingKey="settings-translator-gemini_model"
           />
-          <Text
-            label="Gemini API key"
-            settingKey="settings-translator-gemini_key"
-          ></Text>
+          <Number
+            label="Gemini batch size"
+            settingKey="settings-translator-gemini_batch_size"
+            min={1}
+          />
           <Message>
-            You can generate it here: https://aistudio.google.com/apikey
+            Number of subtitle lines sent in each Gemini request. Higher values
+            reduce the number of API calls and can speed up translation, but may
+            increase timeout or response-size errors. Start with 300 (default),
+            then lower it if requests fail or raise it gradually if your model
+            handles larger batches reliably.
+          </Message>
+          <Chips
+            label="Gemini API keys"
+            settingKey="settings-translator-gemini_keys"
+            sanitizeFn={(values) => {
+              const uniqueKeys = new Set(
+                (values ?? []).map((value) => value.trim()).filter(Boolean),
+              );
+              return Array.from(uniqueKeys);
+            }}
+          ></Chips>
+          <Message>
+            You can generate keys here: https://aistudio.google.com/apikey. Add
+            as many keys as needed; Bazarr rotates across available keys.
           </Message>
         </CollapseBox>
         <CollapseBox
@@ -559,6 +620,14 @@ const SettingsSubtitlesView: FunctionComponent = () => {
             settingKey="settings-translator-lingarr_url"
           />
           <Message>Base URL of Lingarr (e.g., http://localhost:9876)</Message>
+          <Text
+            label="Lingarr API Key (optional)"
+            settingKey="settings-translator-lingarr_token"
+          />
+          <Message>
+            Optional API key for authentication. Leave empty if your Lingarr
+            instance doesn't require authentication.
+          </Message>
         </CollapseBox>
         <Check
           label="Add translation info at the beginning"

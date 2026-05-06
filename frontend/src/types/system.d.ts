@@ -22,6 +22,7 @@ declare namespace System {
     status: string;
     last_run_time: string;
     is_progress: boolean;
+    is_signalr: boolean;
     progress_value: number;
     progress_max: number;
     progress_message: string;
@@ -40,6 +41,7 @@ declare namespace System {
     sonarr_version: string;
     start_time: number;
     timezone: string;
+    cpu_cores: number;
   }
 
   interface Backups {

@@ -3,7 +3,9 @@
 import logging
 import requests
 import datetime
-from requests.exceptions import JSONDecodeError
+import semver
+
+from requests.exceptions import JSONDecodeError, RequestException
 
 from dogpile.cache import make_region
 
@@ -21,7 +23,7 @@ class GetRadarrInfo:
         @return: str
         """
         radarr_version = region.get("radarr_version", expiration_time=datetime.timedelta(seconds=60).total_seconds())
-        if radarr_version:
+        if radarr_version and radarr_version != 'unknown':
             region.set("radarr_version", radarr_version)
             return radarr_version
         else:
@@ -40,7 +42,7 @@ class GetRadarrInfo:
                     rv = f"{url_radarr()}/api/v3/system/status?apikey={settings.radarr.apikey}"
                     radarr_version = requests.get(rv, timeout=int(settings.radarr.http_timeout), verify=False,
                                                   headers=HEADERS).json()['version']
-                except JSONDecodeError:
+                except (RequestException, JSONDecodeError, KeyError):
                     logging.debug('BAZARR cannot get Radarr version')
                     radarr_version = 'unknown'
             except Exception:
@@ -49,6 +51,15 @@ class GetRadarrInfo:
         logging.debug(f'BAZARR got this Radarr version from its API: {radarr_version}')
         region.set("radarr_version", radarr_version)
         return radarr_version
+
+    def semver(self):
+        semver_version = None
+        if isinstance(self.version(), str) and self.version() not in ['', 'unknown']:
+            split_version = self.version().split('.')
+            if len(split_version) >= 3 and all(
+                    split_version[i].isdigit() for i in range(len(split_version))):
+                semver_version = semver.Version(*split_version)
+        return semver_version
 
     def is_legacy(self):
         """

@@ -4,17 +4,15 @@
 import os
 import sys
 import logging
-import pickle
-import codecs
 import subliminal
 
 from subzero.language import Language
 from subliminal_patch.core import save_subtitles
 from subliminal_patch.core_persistent import list_all_subtitles, download_subtitles
-from subliminal_patch.score import ComputeScore
+from subliminal_patch.score import compute_score, DEFAULT_SCORES
 
 from languages.get_languages import alpha3_from_alpha2
-from app.config import get_scores, settings, get_array_from
+from app.config import settings, get_array_from
 from utilities.helper import get_target_folder, force_unicode
 from utilities.path_mappings import path_mappings
 from app.database import (database, get_profiles_list, select, TableEpisodes, TableShows, get_audio_profile_languages,
@@ -27,6 +25,7 @@ from subtitles.indexer.series import store_subtitles
 from subtitles.indexer.movies import store_subtitles_movie
 from subtitles.processing import ProcessSubtitlesResult
 
+from bazarr.subtitles.cache import subtitle_cache
 from .pool import update_pools, _get_pool
 from .utils import get_video, _get_lang_obj, _get_scores, _set_forced_providers
 from .processing import process_subtitle
@@ -44,7 +43,6 @@ def manual_search(path, profile_id, providers, sceneName, title, media_type):
     also_forced = any([x.forced for x in language_set])
     forced_required = all([x.forced for x in language_set])
     normal = not also_forced and not forced_required and all([not x.hi for x in language_set])
-    compute_score = ComputeScore(get_scores())
     _set_forced_providers(pool=pool, also_forced=also_forced, forced_required=forced_required)
 
     if providers:
@@ -59,12 +57,13 @@ def manual_search(path, profile_id, providers, sceneName, title, media_type):
             else:
                 logging.info("BAZARR All providers are throttled")
                 return 'All providers are throttled'
-        except Exception:
-            logging.exception(f"BAZARR Error trying to get Subtitle list from provider for this file: {path}")
+        except Exception as e:
+            logging.exception(f"BAZARR Error trying to get Subtitle list from provider for this file {path}: {repr(e)}")
         else:
             subtitles_list = []
             minimum_score = settings.general.minimum_score
             minimum_score_movie = settings.general.minimum_score_movie
+            score_handler = DEFAULT_SCORES['episode'] if media_type == "series" else DEFAULT_SCORES['movie']
 
             for s in subtitles[video]:
                 if not normal and s.language not in language_set:
@@ -72,7 +71,9 @@ def manual_search(path, profile_id, providers, sceneName, title, media_type):
                     continue
 
                 try:
-                    matches = s.get_matches(video)
+                    matches = s.matches if hasattr(s, 'matches') and isinstance(s.matches, set) and len(s.matches) \
+                        else s.get_matches(video)
+                    matches = {match for match in matches if match in score_handler.keys()}  # cleanup unwanted criterion
                 except AttributeError:
                     continue
 
@@ -97,8 +98,10 @@ def manual_search(path, profile_id, providers, sceneName, title, media_type):
 
                 if 'hash' not in matches:
                     not_matched = scores - matches
+                    not_matched = {match for match in not_matched if match in score_handler.keys()}
                     s.score = score_without_hash
                 else:
+                    matches = s.matches = {match for match in matches if match in ("hash", "hearing_impaired")}
                     s.score = score
                     not_matched = set()
 
@@ -125,7 +128,7 @@ def manual_search(path, profile_id, providers, sceneName, title, media_type):
                          language=str(s.language.basename),
                          hearing_impaired=str(s.hearing_impaired),
                          provider=s.provider_name,
-                         subtitle=codecs.encode(pickle.dumps(s.make_picklable()), "base64").decode(),
+                         subtitle=subtitle_cache.store(s),
                          url=s.page_link,
                          original_format=s.use_original_format,
                          matches=list(matches),
@@ -145,7 +148,7 @@ def manual_search(path, profile_id, providers, sceneName, title, media_type):
 
 @update_pools
 def manual_download_subtitle(path, audio_language, hi, forced, subtitle, provider, sceneName, title, media_type,
-                             use_original_format, profile_id):
+                             use_original_format, profile_id, job_id=None):
     logging.debug(f'BAZARR Manually downloading Subtitles for this file: {path}')
 
     if settings.general.utf8_encode:
@@ -153,7 +156,10 @@ def manual_download_subtitle(path, audio_language, hi, forced, subtitle, provide
     else:
         os.environ["SZ_KEEP_ENCODING"] = "True"
 
-    subtitle = pickle.loads(codecs.decode(subtitle.encode(), "base64"))
+    subtitle = subtitle_cache.get(subtitle)
+    if subtitle is None:
+        logging.error("BAZARR Subtitle not found in cache (expired or invalid ID)")
+        return 'Subtitle not found in cache. Please search again.'
     if hi == 'True':
         subtitle.language.hi = True
     else:
@@ -192,8 +198,8 @@ def manual_download_subtitle(path, audio_language, hi, forced, subtitle, provide
                                                  chmod=chmod,
                                                  formats=(subtitle.format,),
                                                  path_decoder=force_unicode)
-            except Exception:
-                logging.exception(f'BAZARR Error saving Subtitles file to disk for this file: {path}')
+            except Exception as e:
+                logging.exception(f'BAZARR Error saving Subtitles file to disk for this file {path}: {repr(e)}')
                 return 'Error saving Subtitles file to disk'
             else:
                 if saved_subtitles:
@@ -201,7 +207,8 @@ def manual_download_subtitle(path, audio_language, hi, forced, subtitle, provide
                     for saved_subtitle in saved_subtitles:
                         processed_subtitle = process_subtitle(subtitle=saved_subtitle, media_type=media_type,
                                                               audio_language=audio_language, is_upgrade=False,
-                                                              is_manual=True, path=path, max_score=max_score)
+                                                              is_manual=True, path=path, max_score=max_score,
+                                                              job_id=job_id)
                         if processed_subtitle:
                             return processed_subtitle
                         else:
@@ -229,6 +236,9 @@ def episode_manually_download_specific_subtitle(sonarr_series_id, sonarr_episode
             TableEpisodes.audio_language,
             TableEpisodes.path,
             TableEpisodes.sceneName,
+            TableEpisodes.season,
+            TableEpisodes.episode,
+            TableEpisodes.title.label('episodeTitle'),
             TableShows.title)
         .select_from(TableEpisodes)
         .join(TableShows)
@@ -239,6 +249,9 @@ def episode_manually_download_specific_subtitle(sonarr_series_id, sonarr_episode
         return 'Episode not found', 404
 
     title = episodeInfo.title
+    jobs_queue.update_job_name(job_id=job_id, new_job_name=f"Manually downloading Subtitles for {title} - "
+                                                           f"S{episodeInfo.season:02d}E{episodeInfo.episode:02d} - "
+                                                           f"{episodeInfo.episodeTitle}")
     episodePath = path_mappings.path_replace(episodeInfo.path)
     sceneName = episodeInfo.sceneName or "None"
 
@@ -251,7 +264,7 @@ def episode_manually_download_specific_subtitle(sonarr_series_id, sonarr_episode
     try:
         result = manual_download_subtitle(episodePath, audio_language, hi, forced, subtitle, selected_provider,
                                           sceneName, title, 'series', use_original_format,
-                                          profile_id=get_profile_id(episode_id=sonarr_episode_id))
+                                          profile_id=get_profile_id(episode_id=sonarr_episode_id), job_id=job_id)
     except OSError:
         return 'Unable to save subtitles file', 500
     else:
@@ -265,15 +278,20 @@ def episode_manually_download_specific_subtitle(sonarr_series_id, sonarr_episode
                 send_notifications(sonarr_series_id, sonarr_episode_id, result.message)
             store_subtitles(result.path, episodePath)
             return '', 204
+    finally:
+        jobs_queue.update_job_name(job_id=job_id, new_job_name=f"Manually downloaded Subtitles for {title} - "
+                                                               f"S{episodeInfo.season:02d}E{episodeInfo.episode:02d} - "
+                                                               f"{episodeInfo.episodeTitle}")
 
 
 def movie_manually_download_specific_subtitle(radarr_id, hi, forced, use_original_format, selected_provider, subtitle,
                                               job_id=None):
     if not job_id:
-        return jobs_queue.add_job_from_function("Manually downloading Subtitles",is_progress=False)
+        return jobs_queue.add_job_from_function("Manually downloading Subtitles", is_progress=False)
 
     movieInfo = database.execute(
         select(TableMovies.title,
+               TableMovies.year,
                TableMovies.path,
                TableMovies.sceneName,
                TableMovies.audio_language)
@@ -284,6 +302,8 @@ def movie_manually_download_specific_subtitle(radarr_id, hi, forced, use_origina
         return 'Movie not found', 404
 
     title = movieInfo.title
+    jobs_queue.update_job_name(job_id=job_id, new_job_name=f"Manually downloading Subtitles for {title} "
+                                                           f"({movieInfo.year})")
     moviePath = path_mappings.path_replace_movie(movieInfo.path)
     sceneName = movieInfo.sceneName or "None"
 
@@ -296,7 +316,7 @@ def movie_manually_download_specific_subtitle(radarr_id, hi, forced, use_origina
     try:
         result = manual_download_subtitle(moviePath, audio_language, hi, forced, subtitle, selected_provider,
                                           sceneName, title, 'movie', use_original_format,
-                                          profile_id=get_profile_id(movie_id=radarr_id))
+                                          profile_id=get_profile_id(movie_id=radarr_id), job_id=job_id)
     except OSError:
         return 'Unable to save subtitles file', 500
     else:
@@ -310,6 +330,9 @@ def movie_manually_download_specific_subtitle(radarr_id, hi, forced, use_origina
                 send_notifications_movie(radarr_id, result.message)
             store_subtitles_movie(result.path, moviePath)
             return '', 204
+    finally:
+        jobs_queue.update_job_name(job_id=job_id, new_job_name=f"Manually downloaded Subtitles for {title} "
+                                                               f"({movieInfo.year})")
 
 
 def _get_language_obj(profile_id):

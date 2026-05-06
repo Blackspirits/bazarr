@@ -1,10 +1,12 @@
 import { FunctionComponent, ReactElement, useCallback, useMemo } from "react";
 import { Divider, List, Menu, MenuProps, ScrollArea } from "@mantine/core";
 import {
+  faAlignJustify,
   faClock,
   faCode,
   faDeaf,
   faExchangeAlt,
+  faFaceGrinStars,
   faFilm,
   faImage,
   faLanguage,
@@ -26,6 +28,7 @@ import { useModals } from "@/modules/modals";
 import { ModalComponent } from "@/modules/modals/WithModal";
 import { task } from "@/modules/task";
 import { SyncSubtitleModal } from "./forms/SyncSubtitleForm";
+import { TwoPointFitModal } from "./forms/TwoPointFit";
 
 export interface ToolOptions {
   key: string;
@@ -54,6 +57,11 @@ export function useTools() {
         key: "remove_tags",
         icon: faCode,
         name: "Remove Style Tags",
+      },
+      {
+        key: "emoji",
+        icon: faFaceGrinStars,
+        name: "Remove Emoji",
       },
       {
         key: "OCR_fixes",
@@ -92,6 +100,12 @@ export function useTools() {
         icon: faClock,
         name: "Adjust Times...",
         modal: TimeOffsetModal,
+      },
+      {
+        key: "two_point_fit",
+        icon: faAlignJustify,
+        name: "Two-Point Fit...",
+        modal: TwoPointFitModal,
       },
       {
         key: "translation",

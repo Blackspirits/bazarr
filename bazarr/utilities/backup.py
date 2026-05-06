@@ -11,6 +11,8 @@ from glob import glob
 
 from app.get_args import args
 from app.config import settings
+from app.event_handler import event_stream
+from app.jobs_queue import jobs_queue
 from utilities.central import restart_bazarr
 
 
@@ -45,7 +47,12 @@ def get_backup_files(fullpath=True):
         } for x in file_list]
 
 
-def backup_to_zip():
+def backup_to_zip(job_id=None, wait_for_completion=False):
+    if not job_id:
+        jobs_queue.add_job_from_function("Backing up Database and Configuration File", is_progress=False,
+                                         wait_for_completion=wait_for_completion)
+        return
+
     now = datetime.now()
     database_backup_file = None
     now_string = now.strftime("%Y.%m.%d_%H.%M.%S")
@@ -85,6 +92,9 @@ def backup_to_zip():
         else:
             logging.debug('Database file is not included in backup. See previous exception')
         backupZip.write(config_file, 'config.yaml')
+
+    jobs_queue.update_job_name(job_id=job_id, new_job_name="Backed up Database and Configuration File")
+    event_stream(type='backup')
 
 
 def restore_from_backup():

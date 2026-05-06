@@ -94,8 +94,8 @@ def store_subtitles(original_path, reversed_path, use_cache=True):
                     full_dest_folder_path = os.path.join(os.path.dirname(reversed_path), dest_folder)
             subtitles = guess_external_subtitles(full_dest_folder_path, subtitles, "series",
                                                  previously_indexed_subtitles_to_exclude)
-        except Exception:
-            logging.exception("BAZARR unable to index external subtitles.")
+        except Exception as e:
+            logging.exception(f"BAZARR unable to index external subtitles for this file {reversed_path}: {repr(e)}")
         else:
             for subtitle, language in subtitles.items():
                 valid_language = False
@@ -112,10 +112,16 @@ def store_subtitles(original_path, reversed_path, use_cache=True):
 
                 subtitle_path = get_external_subtitles_path(reversed_path, subtitle)
 
+                try:
+                    subtitle_size = os.stat(subtitle_path).st_size
+                except FileNotFoundError:
+                    logging.debug(f"BAZARR skipping missing subtitle file: {subtitle_path}")
+                    continue
+
                 custom = CustomLanguage.found_external(subtitle, subtitle_path)
                 if custom is not None:
                     actual_subtitles.append([custom, path_mappings.path_replace_reverse(subtitle_path),
-                                             os.stat(subtitle_path).st_size])
+                                             subtitle_size])
 
                 elif str(language.basename) != 'und':
                     if language.forced:
@@ -126,7 +132,7 @@ def store_subtitles(original_path, reversed_path, use_cache=True):
                         language_str = str(language)
                     logging.debug(f"BAZARR external subtitles detected: {language_str}")
                     actual_subtitles.append([language_str, path_mappings.path_replace_reverse(subtitle_path),
-                                             os.stat(subtitle_path).st_size])
+                                             subtitle_size])
 
         database.execute(
             update(TableEpisodes)
@@ -282,9 +288,10 @@ def list_missing_subtitles(no=None, epno=None):
     event_stream(type='badges')
 
 
-def series_full_scan_subtitles(job_id=None, use_cache=None):
+def series_full_scan_subtitles(job_id=None, use_cache=None, wait_for_completion=False):
     if not job_id:
-        jobs_queue.add_job_from_function("Full disk scan for episodes subtitles", is_progress=True)
+        jobs_queue.add_job_from_function("Indexing all existing episodes subtitles", is_progress=True,
+                                         wait_for_completion=wait_for_completion)
         return
 
     if use_cache is None:
@@ -304,6 +311,8 @@ def series_full_scan_subtitles(job_id=None, use_cache=None):
         store_subtitles(episode.path, path_mappings.path_replace(episode.path), use_cache=use_cache)
 
     logging.info('BAZARR All existing episode subtitles indexed from disk.')
+
+    jobs_queue.update_job_name(job_id=job_id, new_job_name="Indexed all existing series subtitles")
 
     gc.collect()
 

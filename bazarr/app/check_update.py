@@ -11,16 +11,23 @@ import sys
 from shutil import rmtree
 from zipfile import ZipFile
 
-from .get_args import args
-from .config import settings
+from app.jobs_queue import jobs_queue
+from app.get_args import args
+from app.config import settings
 
 
 def deprecated_python_version():
     # return True if Python version is deprecated
-    return sys.version_info.major == 2 or (sys.version_info.major == 3 and sys.version_info.minor < 8)
+    return sys.version_info.major == 2 or (sys.version_info.major == 3 and sys.version_info.minor < 10)
 
 
-def check_releases():
+def check_releases(job_id=None, startup=False, wait_for_completion=False):
+    # startup is used to prevent trying to create a job before the jobs queue is initialized
+    if not startup and not job_id:
+        jobs_queue.add_job_from_function("Updating Release Info", is_progress=False,
+                                         wait_for_completion=wait_for_completion)
+        return
+
     releases = []
     url_releases = 'https://api.github.com/repos/morpheus65535/Bazarr/releases?per_page=100'
     try:
@@ -51,6 +58,9 @@ def check_releases():
         with open(os.path.join(args.config_dir, 'config', 'releases.txt'), 'w') as f:
             json.dump(releases, f)
         logging.debug(f'BAZARR saved {len(r.json())} releases to releases.txt')
+    finally:
+        if job_id:
+            jobs_queue.update_job_name(job_id=job_id, new_job_name="Updated Release Info")
 
 
 def check_if_new_update():
@@ -63,7 +73,7 @@ def check_if_new_update():
         return
     logging.debug(f'BAZARR updater is using {settings.general.branch} branch')
 
-    check_releases()
+    check_releases(startup=True)
 
     with open(os.path.join(args.config_dir, 'config', 'releases.txt'), 'r') as f:
         data = json.load(f)
@@ -212,6 +222,7 @@ def update_cleaner(zipfile, bazarr_dir, config_dir):
     dir_to_ignore = [f'^.{separator}',
                      f'^bin{separator}',
                      f'^venv{separator}',
+                     f'^.venv{separator}',
                      f'^WinPython{separator}',
                      f'{separator}__pycache__{separator}$']
     if os.path.abspath(bazarr_dir).lower() == os.path.abspath(config_dir).lower():

@@ -14,7 +14,7 @@ export const usePlexAuthValidationQuery = () => {
       try {
         const result = await api.plex.validateAuth();
         return result;
-      } catch (error) {
+      } catch {
         // Return a default value when API is not available
         return {
           valid: false,
@@ -93,7 +93,9 @@ export const usePlexLogoutMutation = () => {
   return useMutation({
     mutationFn: () => api.plex.logout(),
     onSuccess: () => {
-      void queryClient.invalidateQueries({
+      // Remove all Plex queries from cache to prevent any refetch attempts after logout
+      // This is intentional - on logout we want to completely clear Plex state
+      queryClient.removeQueries({
         queryKey: [QueryKeys.Plex],
       });
 
@@ -113,16 +115,21 @@ export const usePlexServerSelectionMutation = () => {
       name: string;
       uri: string;
       local: boolean;
+      connections?: string[];
     }) =>
       api.plex.selectServer({
         machineIdentifier: params.machineIdentifier,
         name: params.name,
         uri: params.uri,
         local: params.local,
+        connections: params.connections,
       }),
     onSuccess: () => {
       void queryClient.invalidateQueries({
         queryKey: [QueryKeys.Plex, "selectedServer"],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: [QueryKeys.Plex, "libraries"],
       });
     },
   });
@@ -141,6 +148,8 @@ export const usePlexLibrariesQuery = <TData = Plex.Library[]>(
     enabled,
     staleTime: 1000 * 60 * 5, // Cache for 5 minutes
     refetchOnWindowFocus: false, // Don't refetch on window focus
+    retry: 3, // Retry failed requests 3 times
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential backoff: 1s, 2s, 4s, max 30s
     ...options,
   });
 };

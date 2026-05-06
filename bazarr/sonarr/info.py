@@ -3,7 +3,9 @@
 import logging
 import requests
 import datetime
-from requests.exceptions import JSONDecodeError
+import semver
+
+from requests.exceptions import JSONDecodeError, RequestException
 
 from dogpile.cache import make_region
 
@@ -21,7 +23,7 @@ class GetSonarrInfo:
         @return: str
         """
         sonarr_version = region.get("sonarr_version", expiration_time=datetime.timedelta(seconds=60).total_seconds())
-        if sonarr_version:
+        if sonarr_version and sonarr_version != 'unknown':
             region.set("sonarr_version", sonarr_version)
             return sonarr_version
         else:
@@ -40,7 +42,7 @@ class GetSonarrInfo:
                     sv = f"{url_sonarr()}/api/v3/system/status?apikey={settings.sonarr.apikey}"
                     sonarr_version = requests.get(sv, timeout=int(settings.sonarr.http_timeout), verify=False,
                                                   headers=HEADERS).json()['version']
-                except JSONDecodeError:
+                except (RequestException, JSONDecodeError, KeyError):
                     logging.debug('BAZARR cannot get Sonarr version')
                     sonarr_version = 'unknown'
             except Exception:
@@ -49,6 +51,15 @@ class GetSonarrInfo:
         logging.debug(f'BAZARR got this Sonarr version from its API: {sonarr_version}')
         region.set("sonarr_version", sonarr_version)
         return sonarr_version
+
+    def semver(self):
+        semver_version = None
+        if isinstance(self.version(), str) and self.version() not in ['', 'unknown']:
+            split_version = self.version().split('.')
+            if len(split_version) >= 3 and all(
+                    split_version[i].isdigit() for i in range(len(split_version))):
+                semver_version = semver.Version(*split_version)
+        return semver_version
 
     def is_legacy(self):
         """

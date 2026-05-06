@@ -10,9 +10,9 @@ import threading
 import time
 from datetime import datetime
 
-import random
 import configparser
 import yaml
+import platform
 
 from urllib.parse import quote_plus
 from utilities.binaries import BinaryNotFound, get_binary
@@ -86,7 +86,10 @@ validators = [
               is_type_of=str),
     Validator('general.ip', must_exist=True, default='*', is_type_of=str, condition=validate_ip_address),
     Validator('general.port', must_exist=True, default=6767, is_type_of=int, gte=1, lte=65535),
+    Validator('general.hostname', must_exist=True, default=platform.node(), is_type_of=str),
     Validator('general.base_url', must_exist=True, default='', is_type_of=str),
+    Validator('general.instance_name', must_exist=True, default='Bazarr', is_type_of=str,
+              apply_default_on_none=True),
     Validator('general.path_mappings', must_exist=True, default=[], is_type_of=list),
     Validator('general.debug', must_exist=True, default=False, is_type_of=bool),
     Validator('general.branch', must_exist=True, default='master', is_type_of=str,
@@ -110,6 +113,7 @@ validators = [
     Validator('general.use_sonarr', must_exist=True, default=False, is_type_of=bool),
     Validator('general.use_radarr', must_exist=True, default=False, is_type_of=bool),
     Validator('general.use_plex', must_exist=True, default=False, is_type_of=bool),
+    Validator('general.use_jellyfin', must_exist=True, default=False, is_type_of=bool),
     Validator('general.path_mappings_movie', must_exist=True, default=[], is_type_of=list),
     Validator('general.serie_tag_enabled', must_exist=True, default=False, is_type_of=bool),
     Validator('general.movie_tag_enabled', must_exist=True, default=False, is_type_of=bool),
@@ -138,9 +142,12 @@ validators = [
     Validator('general.enabled_integrations', must_exist=True, default=[], is_type_of=list),
     Validator('general.multithreading', must_exist=True, default=True, is_type_of=bool),
     Validator('general.chmod_enabled', must_exist=True, default=False, is_type_of=bool),
+    Validator('general.enable_strm_support', must_exist=True, default=False, is_type_of=bool),
     Validator('general.chmod', must_exist=True, default='0640', is_type_of=str),
     Validator('general.subfolder', must_exist=True, default='current', is_type_of=str),
     Validator('general.subfolder_custom', must_exist=True, default='', is_type_of=str),
+    Validator('general.use_whisper_fallback', must_exist=True, default=False, is_type_of=bool),
+    Validator('general.use_whisper_fallback_series', must_exist=True, default=False, is_type_of=bool),
     Validator('general.upgrade_subs', must_exist=True, default=True, is_type_of=bool),
     Validator('general.upgrade_frequency', must_exist=True, default=12, is_type_of=int,
               is_in=[6, 12, 24, 168, ONE_HUNDRED_YEARS_IN_HOURS]),
@@ -154,6 +161,7 @@ validators = [
               is_in=[6, 12, 24, 168, ONE_HUNDRED_YEARS_IN_HOURS]),
     Validator('general.subzero_mods', must_exist=True, default='', is_type_of=str),
     Validator('general.dont_notify_manual_actions', must_exist=True, default=False, is_type_of=bool),
+    Validator('general.notify_if_nothing_is_missing_for_signalr_event', must_exist=True, default=False, is_type_of=bool),
     Validator('general.hi_extension', must_exist=True, default='hi', is_type_of=str, is_in=['hi', 'cc', 'sdh']),
     Validator('general.embedded_subtitles_parser', must_exist=True, default='ffprobe', is_type_of=str,
               is_in=['ffprobe', 'mediainfo'], condition=check_parser_binary),
@@ -162,6 +170,8 @@ validators = [
     Validator('general.parse_embedded_audio_track', must_exist=True, default=False, is_type_of=bool),
     Validator('general.skip_hashing', must_exist=True, default=False, is_type_of=bool),
     Validator('general.language_equals', must_exist=True, default=[], is_type_of=list),
+    Validator('general.concurrent_jobs', must_exist=True, default=4 if os.cpu_count() >= 4 else os.cpu_count(),
+              is_type_of=int),
 
     # log section
     Validator('log.include_filter', must_exist=True, default='', is_type_of=str, cast=str),
@@ -190,11 +200,13 @@ validators = [
 
     # translating section
     Validator('translator.default_score', must_exist=True, default=50, is_type_of=int, gte=0),
-    Validator('translator.gemini_key', must_exist=True, default='', is_type_of=str, cast=str),
+    Validator('translator.gemini_keys', must_exist=True, default=[], is_type_of=list),
     Validator('translator.gemini_model', must_exist=True, default='gemini-2.0-flash', is_type_of=str, cast=str),
+    Validator('translator.gemini_batch_size', must_exist=True, default=300, is_type_of=int, gte=1),
     Validator('translator.translator_info', must_exist=True, default=True, is_type_of=bool),
     Validator('translator.translator_type', must_exist=True, default='google_translate', is_type_of=str, cast=str),
     Validator('translator.lingarr_url', must_exist=True, default='http://lingarr:9876', is_type_of=str),
+    Validator('translator.lingarr_token', must_exist=True, default='', is_type_of=str, cast=str),
 
     # sonarr section
     Validator('sonarr.ip', must_exist=True, default='127.0.0.1', is_type_of=str),
@@ -209,6 +221,7 @@ validators = [
     Validator('sonarr.full_update_day', must_exist=True, default=6, is_type_of=int, gte=0, lte=6),
     Validator('sonarr.full_update_hour', must_exist=True, default=4, is_type_of=int, gte=0, lte=23),
     Validator('sonarr.only_monitored', must_exist=True, default=False, is_type_of=bool),
+    Validator('sonarr.series_sync_on_live', must_exist=True, default=True, is_type_of=bool),
     Validator('sonarr.series_sync', must_exist=True, default=60, is_type_of=int,
               is_in=[15, 60, 180, 360, 720, 1440, 10080, ONE_HUNDRED_YEARS_IN_MINUTES]),
     Validator('sonarr.excluded_tags', must_exist=True, default=[], is_type_of=list, condition=validate_tags),
@@ -232,6 +245,7 @@ validators = [
     Validator('radarr.full_update_day', must_exist=True, default=6, is_type_of=int, gte=0, lte=6),
     Validator('radarr.full_update_hour', must_exist=True, default=4, is_type_of=int, gte=0, lte=23),
     Validator('radarr.only_monitored', must_exist=True, default=False, is_type_of=bool),
+    Validator('radarr.movies_sync_on_live', must_exist=True, default=True, is_type_of=bool),
     Validator('radarr.movies_sync', must_exist=True, default=60, is_type_of=int,
               is_in=[15, 60, 180, 360, 720, 1440, 10080, ONE_HUNDRED_YEARS_IN_MINUTES]),
     Validator('radarr.excluded_tags', must_exist=True, default=[], is_type_of=list, condition=validate_tags),
@@ -244,8 +258,10 @@ validators = [
     Validator('plex.port', must_exist=True, default=32400, is_type_of=int, gte=1, lte=65535),
     Validator('plex.ssl', must_exist=True, default=False, is_type_of=bool),
     Validator('plex.apikey', must_exist=True, default='', is_type_of=str),
-    Validator('plex.movie_library', must_exist=True, default='', is_type_of=str),
-    Validator('plex.series_library', must_exist=True, default='', is_type_of=str),
+    Validator('plex.movie_library', must_exist=True, default=[], is_type_of=(str, list)),
+    Validator('plex.series_library', must_exist=True, default=[], is_type_of=(str, list)),
+    Validator('plex.movie_library_ids', must_exist=True, default=[], is_type_of=list),
+    Validator('plex.series_library_ids', must_exist=True, default=[], is_type_of=list),
     Validator('plex.set_movie_added', must_exist=True, default=False, is_type_of=bool),
     Validator('plex.set_episode_added', must_exist=True, default=False, is_type_of=bool),
     Validator('plex.update_movie_library', must_exist=True, default=False, is_type_of=bool),
@@ -266,6 +282,19 @@ validators = [
     Validator('plex.migration_successful', must_exist=True, default=False, is_type_of=bool),
     Validator('plex.migration_timestamp', must_exist=True, default='', is_type_of=(int, float, str)),
     Validator('plex.disable_auto_migration', must_exist=True, default=False, is_type_of=bool),
+    Validator('plex.client_identifier', must_exist=True, default='', is_type_of=str),
+
+    # jellyfin section
+    Validator('jellyfin.url', must_exist=True, default='', is_type_of=str),
+    Validator('jellyfin.apikey', must_exist=True, default='', is_type_of=str),
+    Validator('jellyfin.movie_library', must_exist=True, default=[], is_type_of=list),
+    Validator('jellyfin.series_library', must_exist=True, default=[], is_type_of=list),
+    Validator('jellyfin.movie_library_ids', must_exist=True, default=[], is_type_of=list),
+    Validator('jellyfin.series_library_ids', must_exist=True, default=[], is_type_of=list),
+    Validator('jellyfin.update_movie_library', must_exist=True, default=False, is_type_of=bool),
+    Validator('jellyfin.update_series_library', must_exist=True, default=False, is_type_of=bool),
+    Validator('jellyfin.refresh_method', must_exist=True, default='immediate', is_type_of=str,
+              is_in=['immediate', 'async']),
 
     # proxy section
     Validator('proxy.type', must_exist=True, default=None, is_type_of=(NoneType, str),
@@ -276,20 +305,12 @@ validators = [
     Validator('proxy.password', must_exist=True, default='', is_type_of=str, cast=str),
     Validator('proxy.exclude', must_exist=True, default=["localhost", "127.0.0.1"], is_type_of=list),
 
-    # opensubtitles.org section
-    Validator('opensubtitles.username', must_exist=True, default='', is_type_of=str, cast=str),
-    Validator('opensubtitles.password', must_exist=True, default='', is_type_of=str, cast=str),
-    Validator('opensubtitles.use_tag_search', must_exist=True, default=False, is_type_of=bool),
-    Validator('opensubtitles.vip', must_exist=True, default=False, is_type_of=bool),
-    Validator('opensubtitles.ssl', must_exist=True, default=False, is_type_of=bool),
-    Validator('opensubtitles.timeout', must_exist=True, default=15, is_type_of=int, gte=1),
-    Validator('opensubtitles.skip_wrong_fps', must_exist=True, default=False, is_type_of=bool),
-
     # opensubtitles.com section
     Validator('opensubtitlescom.username', must_exist=True, default='', is_type_of=str, cast=str),
     Validator('opensubtitlescom.password', must_exist=True, default='', is_type_of=str, cast=str),
     Validator('opensubtitlescom.use_hash', must_exist=True, default=True, is_type_of=bool),
     Validator('opensubtitlescom.include_ai_translated', must_exist=True, default=False, is_type_of=bool),
+    Validator('opensubtitlescom.include_machine_translated', must_exist=True, default=False, is_type_of=bool),
 
     # napiprojekt section
     Validator('napiprojekt.only_authors', must_exist=True, default=False, is_type_of=bool),
@@ -342,6 +363,10 @@ validators = [
     # legendasnet section
     Validator('legendasnet.username', must_exist=True, default='', is_type_of=str, cast=str),
     Validator('legendasnet.password', must_exist=True, default='', is_type_of=str, cast=str),
+
+    # pipocas section
+    Validator('pipocas.username', must_exist=True, default='', is_type_of=str, cast=str),
+    Validator('pipocas.password', must_exist=True, default='', is_type_of=str, cast=str),
 
     # ktuvit section
     Validator('ktuvit.email', must_exist=True, default='', is_type_of=str),
@@ -423,33 +448,6 @@ validators = [
     Validator('subsync.max_offset_seconds', must_exist=True, default=60, is_type_of=int,
               is_in=[60, 120, 300, 600]),
 
-    # series_scores section
-    Validator('series_scores.hash', must_exist=True, default=359, is_type_of=int),
-    Validator('series_scores.series', must_exist=True, default=180, is_type_of=int),
-    Validator('series_scores.year', must_exist=True, default=90, is_type_of=int),
-    Validator('series_scores.season', must_exist=True, default=30, is_type_of=int),
-    Validator('series_scores.episode', must_exist=True, default=30, is_type_of=int),
-    Validator('series_scores.release_group', must_exist=True, default=14, is_type_of=int),
-    Validator('series_scores.source', must_exist=True, default=7, is_type_of=int),
-    Validator('series_scores.audio_codec', must_exist=True, default=3, is_type_of=int),
-    Validator('series_scores.resolution', must_exist=True, default=2, is_type_of=int),
-    Validator('series_scores.video_codec', must_exist=True, default=2, is_type_of=int),
-    Validator('series_scores.streaming_service', must_exist=True, default=1, is_type_of=int),
-    Validator('series_scores.hearing_impaired', must_exist=True, default=1, is_type_of=int),
-
-    # movie_scores section
-    Validator('movie_scores.hash', must_exist=True, default=119, is_type_of=int),
-    Validator('movie_scores.title', must_exist=True, default=60, is_type_of=int),
-    Validator('movie_scores.year', must_exist=True, default=30, is_type_of=int),
-    Validator('movie_scores.release_group', must_exist=True, default=13, is_type_of=int),
-    Validator('movie_scores.source', must_exist=True, default=7, is_type_of=int),
-    Validator('movie_scores.audio_codec', must_exist=True, default=3, is_type_of=int),
-    Validator('movie_scores.resolution', must_exist=True, default=2, is_type_of=int),
-    Validator('movie_scores.video_codec', must_exist=True, default=2, is_type_of=int),
-    Validator('movie_scores.streaming_service', must_exist=True, default=1, is_type_of=int),
-    Validator('movie_scores.edition', must_exist=True, default=1, is_type_of=int),
-    Validator('movie_scores.hearing_impaired', must_exist=True, default=1, is_type_of=int),
-
     # postgresql section
     Validator('postgresql.enabled', must_exist=True, default=False, is_type_of=bool),
     Validator('postgresql.host', must_exist=True, default='localhost', is_type_of=str),
@@ -465,6 +463,15 @@ validators = [
 
     # subsource section
     Validator('subsource.apikey', must_exist=True, default='', is_type_of=str),
+
+    # subsarr section
+    Validator('subsarr.base_url', must_exist=True, default='', is_type_of=str),
+
+    # subx section
+    Validator('subx.api_key', must_exist=True, default='', is_type_of=str),
+    
+    # subsro section
+    Validator('subsro.api_key', must_exist=True, default='', is_type_of=str, cast=str),
 ]
 
 
@@ -495,6 +502,9 @@ elif not os.path.exists(config_yaml_file):
     if not os.path.isdir(os.path.dirname(config_yaml_file)):
         os.makedirs(os.path.dirname(config_yaml_file))
     open(config_yaml_file, mode='w').close()
+
+if os.path.exists(config_yaml_file):
+    os.environ['BAZARR_CONFIGURED'] = '1'
 
 settings = Dynaconf(
     settings_file=config_yaml_file,
@@ -555,12 +565,17 @@ array_keys = ['excluded_tags',
               'excluded_series_types',
               'enabled_providers',
               'enabled_integrations',
+              'gemini_keys',
               'path_mappings',
               'path_mappings_movie',
               'remove_profile_tags',
               'language_equals',
               'blacklisted_languages',
-              'blacklisted_providers']
+              'blacklisted_providers',
+              'movie_library',
+              'series_library',
+              'movie_library_ids',
+              'series_library_ids']
 
 empty_values = ['', 'None', 'null', 'undefined', None, []]
 
@@ -589,6 +604,20 @@ if hasattr(settings.embeddedsubtitles, 'unknown_as_english'):
         settings.embeddedsubtitles.unknown_as_fallback = True
         settings.embeddedsubtitles.fallback_lang = 'en'
     del settings.embeddedsubtitles.unknown_as_english
+
+# delete custom scores sections since we don't use this anymore
+if hasattr(settings, 'series_scores'):
+    settings.unset('SERIES_SCORES')
+if hasattr(settings, 'movie_scores'):
+    settings.unset('MOVIE_SCORES')
+
+# backward compatibility: migrate gemini_key to gemini_keys
+if hasattr(settings.translator, 'gemini_key'):
+    legacy_key = str(settings.translator.gemini_key).strip()
+    if legacy_key and not settings.translator.gemini_keys:
+        settings.translator.gemini_keys = [legacy_key]
+    del settings.translator.gemini_key
+
 # save updated settings to file
 write_config()
 
@@ -702,6 +731,9 @@ def save_settings(settings_items):
         if key in ['settings-general-base_url', 'settings-sonarr-base_url', 'settings-radarr-base_url']:
             value = base_url_slash_cleaner(value)
 
+        if key == 'settings-general-instance_name' and value == '':
+            value = None
+
         if key == 'settings-auth-password':
             if value != settings.auth.password and value is not None:
                 value = hashlib.md5(f"{value}".encode('utf-8')).hexdigest()
@@ -710,7 +742,7 @@ def save_settings(settings_items):
             configure_debug = True
 
         if key == 'settings-general-hi_extension':
-            os.environ["SZ_HI_EXTENSION"] = str(value)
+            os.environ["SZ_HI_EXTENSION"] = value or ""
 
         if key in ['settings-general-anti_captcha_provider', 'settings-anticaptcha-anti_captcha_key',
                    'settings-deathbycaptcha-username', 'settings-deathbycaptcha-password']:
@@ -770,15 +802,6 @@ def save_settings(settings_items):
             if key != settings.legendasdivx.password:
                 reset_providers = True
                 region.delete('legendasdivx_cookies2')
-
-        if key == 'settings-opensubtitles-username':
-            if key != settings.opensubtitles.username:
-                reset_providers = True
-                region.delete('os_token')
-        elif key == 'settings-opensubtitles-password':
-            if key != settings.opensubtitles.password:
-                reset_providers = True
-                region.delete('os_token')
 
         if key == 'settings-opensubtitlescom-username':
             if key != settings.opensubtitlescom.username:
@@ -872,6 +895,12 @@ def save_settings(settings_items):
     else:
         write_config()
 
+        # Set the configured state based on config.yaml file existence
+        from .database import database, update, System
+        database.execute(
+            update(System)
+            .values(configured=1))
+
         # Reconfigure Bazarr to reflect changes
         if configure_debug:
             from .logger import configure_logging
@@ -953,11 +982,6 @@ def configure_proxy_func():
         os.environ['HTTPS_PROXY'] = str(proxy)
         exclude = ','.join(settings.proxy.exclude)
         os.environ['NO_PROXY'] = exclude
-
-
-def get_scores():
-    settings = get_settings()
-    return {"movie": settings["movie_scores"], "episode": settings["series_scores"]}
 
 
 def sync_checker(subtitle):
@@ -1423,13 +1447,56 @@ def cleanup_legacy_oauth_config():
         write_config()
 
 
+def migrate_plex_library_to_list():
+    """
+    Migrate old single-string Plex library settings to new list format.
+    This migration runs during app initialization to ensure backward compatibility.
+    
+    Converts:
+    - plex.movie_library: string -> list
+    - plex.series_library: string -> list
+    
+    Automatically saves configuration if changes are made.
+    """
+    changed = False
+    
+    # Migrate movie library
+    if isinstance(settings.plex.movie_library, str):
+        old_value = settings.plex.movie_library
+        if old_value:  # Only migrate if not empty
+            settings.plex.movie_library = [old_value]
+            logging.info(f"Migrated plex.movie_library from string to list: {old_value}")
+            changed = True
+        else:
+            settings.plex.movie_library = []
+            changed = True
+    
+    # Migrate series library
+    if isinstance(settings.plex.series_library, str):
+        old_value = settings.plex.series_library
+        if old_value:  # Only migrate if not empty
+            settings.plex.series_library = [old_value]
+            logging.info(f"Migrated plex.series_library from string to list: {old_value}")
+            changed = True
+        else:
+            settings.plex.series_library = []
+            changed = True
+    
+    if changed:
+        write_config()
+        logging.debug("Plex library migration completed successfully")
+
+
 def initialize_plex():
     """
     Initialize Plex configuration on startup.
     Call this from your main application initialization.
     """
-    # Run migration
+    # Run OAuth migration
     migrate_plex_config()
+    
+    # Run library multiselect migration
+    migrate_plex_library_to_list()
     
     # Clean up legacy fields for existing OAuth configurations
     cleanup_legacy_oauth_config()

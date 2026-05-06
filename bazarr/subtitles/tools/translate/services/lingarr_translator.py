@@ -42,6 +42,7 @@ class LingarrTranslatorService:
         self.language_code_convert_dict = {
             'zh': 'zh-CN',
             'zt': 'zh-TW',
+            'pb': 'pt-BR',
         }
 
     def translate(self, job_id=None):
@@ -63,7 +64,7 @@ class LingarrTranslatorService:
                 logger.error(f'Translation failed for {self.source_srt_file}')
                 jobs_queue.update_job_progress(job_id=job_id,
                                                progress_message=f'Translation failed for {self.source_srt_file}')
-                return False
+                raise RuntimeError(f'Translation failed for {self.source_srt_file}')
 
             logger.debug(f'BAZARR saving Lingarr translated subtitles to {self.dest_srt_file}')
             translation_map = {}
@@ -90,7 +91,7 @@ class LingarrTranslatorService:
             result = create_process_result(message, self.video_path, self.orig_to_lang, self.forced, self.hi,
                                            self.dest_srt_file, self.media_type)
 
-            if self.media_type == 'series':
+            if self.media_type == 'episode':
                 history_log(action=6,
                             sonarr_series_id=self.sonarr_series_id,
                             sonarr_episode_id=self.sonarr_episode_id,
@@ -107,7 +108,7 @@ class LingarrTranslatorService:
         except Exception as e:
             logger.error(f'BAZARR encountered an error during Lingarr translation: {str(e)}')
             jobs_queue.update_job_progress(job_id=job_id, progress_message=f'Lingarr translation failed: {str(e)}')
-            return False
+            raise
 
     @retry(exceptions=(TooManyRequests, RequestError, requests.exceptions.RequestException), tries=3, delay=1,
            backoff=2, jitter=(0, 1))
@@ -130,7 +131,7 @@ class LingarrTranslatorService:
                 sonarr_episode_id=self.sonarr_episode_id
             )
 
-            if self.media_type == 'series':
+            if self.media_type == 'episode':
                 api_media_type = "Episode"
                 arr_media_id = self.sonarr_series_id or 0
             else:
@@ -148,10 +149,14 @@ class LingarrTranslatorService:
 
             logger.debug(f'BAZARR is sending {len(lines_payload)} lines to Lingarr with full media context')
 
+            headers = {"Content-Type": "application/json"}
+            if settings.translator.lingarr_token:
+                headers["X-Api-Key"] = settings.translator.lingarr_token
+
             response = requests.post(
                 f"{settings.translator.lingarr_url}/api/translate/content",
                 json=payload,
-                headers={"Content-Type": "application/json"},
+                headers=headers,
                 timeout=1800
             )
 
@@ -167,6 +172,8 @@ class LingarrTranslatorService:
                 else:
                     logger.error(f'Unexpected response format from Lingarr API: {translated_batch}')
                     return None
+            elif response.status_code == 401:
+                raise RequestError("Authentication failed: Invalid or missing API key")
             elif response.status_code == 429:
                 raise TooManyRequests("Rate limit exceeded")
             elif response.status_code >= 500:

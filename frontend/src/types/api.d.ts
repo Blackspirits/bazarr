@@ -332,9 +332,16 @@ declare namespace Plex {
     url: string;
   }
 
+  interface PlexPassSubscription {
+    active: boolean;
+    has_webhooks_feature: boolean;
+    plan: string | null;
+  }
+
   interface WebhookList {
     webhooks: WebhookInfo[];
     count: number;
+    plexPassSubscription?: PlexPassSubscription;
   }
 
   interface AutopulseResult {
@@ -387,6 +394,27 @@ interface SubtitleInfo {
   filename: string;
   episode: number;
   season: number;
+}
+
+declare namespace SubtitleContents {
+  interface LineTime {
+    hours: number;
+    minutes: number;
+    seconds: number;
+    total_seconds: number;
+    microseconds: number;
+  }
+
+  interface Line {
+    index: number;
+    content: string;
+    proprietary: string;
+    start: LineTime;
+    end: LineTime;
+    // duration: LineTime;
+  }
+
+  // interface Contents extends Array<Line> {}
 }
 
 type ItemSearchResult = Partial<SeriesIdType> &

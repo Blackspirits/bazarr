@@ -8,6 +8,7 @@ import logging
 from subzero.language import Language
 from subliminal_patch.core import save_subtitles
 from subliminal_patch.subtitle import Subtitle
+from subliminal_patch.score import MAX_SCORES
 from pysubs2.formats import get_format_identifier
 
 from languages.get_languages import language_from_alpha3, alpha2_from_alpha3, alpha3_from_alpha2
@@ -32,14 +33,16 @@ from subtitles.processing import ProcessSubtitlesResult
 
 from .sync import sync_subtitles
 from .post_processing import postprocessing
+from plex.operations import plex_set_movie_added_date_now, plex_set_episode_added_date_now, plex_refresh_item
+from jellyfin.operations import jellyfin_refresh_item
 
 
-def manual_upload_subtitle(path, language, forced, hi, media_type, subtitle, audio_language, job_id=None,
+def manual_upload_subtitle(path, language, forced, hi, media_type, subtitle, filename, audio_language, job_id=None,
                            sonarrSeriesId=None, sonarrEpisodeId=None, radarrId=None):
     if not job_id:
-        return jobs_queue.add_job_from_function(f"Uploading {subtitle.filename}", is_progress=False)
+        return jobs_queue.add_job_from_function(f"Uploading {filename}", is_progress=False)
 
-    logging.debug(f'BAZARR Manually uploading subtitles: {subtitle.filename}')
+    logging.debug(f'BAZARR Manually uploading subtitles: {filename}')
 
     single = settings.general.single_language
 
@@ -67,7 +70,11 @@ def manual_upload_subtitle(path, language, forced, hi, media_type, subtitle, aud
         episode_metadata = database.execute(
             select(TableEpisodes.sonarrSeriesId,
                    TableEpisodes.sonarrEpisodeId,
-                   TableShows.profileId)
+                   TableEpisodes.season,
+                   TableEpisodes.episode,
+                   TableShows.profileId,
+                   TableShows.imdbId,
+                   TableShows.tvdbId)
             .select_from(TableEpisodes)
             .join(TableShows)
             .where(TableEpisodes.sonarrEpisodeId == sonarrEpisodeId)) \
@@ -79,7 +86,8 @@ def manual_upload_subtitle(path, language, forced, hi, media_type, subtitle, aud
             return
     else:
         movie_metadata = database.execute(
-            select(TableMovies.radarrId, TableMovies.profileId)
+            select(TableMovies.radarrId, TableMovies.profileId,
+                   TableMovies.imdbId, TableMovies.tmdbId)
             .where(TableMovies.radarrId == radarrId)) \
             .first()
 
@@ -100,31 +108,33 @@ def manual_upload_subtitle(path, language, forced, hi, media_type, subtitle, aud
         original_format=use_original_format
     )
 
-    sub.content = subtitle.read()
+    sub.content = subtitle.getvalue()
     if not sub.is_valid():
-        logging.exception(f'BAZARR Invalid subtitle file: {subtitle.filename}')
+        logging.exception(f'BAZARR Invalid subtitle file: {filename}')
         sub.mods = None
 
     if settings.general.utf8_encode:
         sub.set_encoding("utf-8")
 
     try:
-        sub.format = (get_format_identifier(os.path.splitext(subtitle.filename)[1]),)
+        sub.format = (get_format_identifier(os.path.splitext(filename)[1]),)
     except Exception:
         pass
 
     saved_subtitles = []
     try:
+        # ensure that formats must be a tuple of strings
+        sub_format = (sub.format,) if isinstance(sub.format, str) else sub.format
         saved_subtitles = save_subtitles(path,
                                          [sub],
                                          single=single,
                                          tags=None,  # fixme
                                          directory=get_target_folder(path),
                                          chmod=chmod,
-                                         formats=(sub.format,) if use_original_format else ("srt",),
+                                         formats=sub_format if use_original_format else ("srt",),
                                          path_decoder=force_unicode)
-    except Exception:
-        logging.exception(f'BAZARR Error saving Subtitles file to disk for this file: {path}')
+    except Exception as e:
+        logging.exception(f'BAZARR Error saving Subtitles file to disk for this file {path}: {repr(e)}')
         return
 
     if len(saved_subtitles) < 1:
@@ -161,7 +171,7 @@ def manual_upload_subtitle(path, language, forced, hi, media_type, subtitle, aud
     if media_type == 'series':
         sync_subtitles(video_path=path, srt_path=subtitle_path, srt_lang=uploaded_language_code2, percent_score=100,
                        sonarr_series_id=episode_metadata.sonarrSeriesId, forced=forced, hi=hi,
-                       sonarr_episode_id=episode_metadata.sonarrEpisodeId, job_id=job_id, job_sub_function=True,)
+                       sonarr_episode_id=episode_metadata.sonarrEpisodeId, job_id=job_id)
         reversed_path = path_mappings.path_replace_reverse(path)
         reversed_subtitles_path = path_mappings.path_replace_reverse(subtitle_path)
         notify_sonarr(episode_metadata.sonarrSeriesId)
@@ -169,7 +179,7 @@ def manual_upload_subtitle(path, language, forced, hi, media_type, subtitle, aud
         event_stream(type='episode-wanted', action='delete', payload=episode_metadata.sonarrEpisodeId)
     else:
         sync_subtitles(video_path=path, srt_path=subtitle_path, srt_lang=uploaded_language_code2, percent_score=100,
-                       radarr_id=movie_metadata.radarrId, forced=forced, hi=hi, job_id=job_id, job_sub_function=True,)
+                       radarr_id=movie_metadata.radarrId, forced=forced, hi=hi, job_id=job_id)
         reversed_path = path_mappings.path_replace_reverse_movie(path)
         reversed_subtitles_path = path_mappings.path_replace_reverse_movie(subtitle_path)
         notify_radarr(movie_metadata.radarrId)
@@ -195,16 +205,33 @@ def manual_upload_subtitle(path, language, forced, hi, media_type, subtitle, aud
             result = result[0]
         provider = "manual"
         if media_type == 'series':
-            score = 360
-            history_log(4, sonarrSeriesId, sonarrEpisodeId, result, fake_provider=provider, fake_score=score)
+            history_log(4, sonarrSeriesId, sonarrEpisodeId, result, fake_provider=provider,
+                        fake_score=MAX_SCORES['episode'])
             if not settings.general.dont_notify_manual_actions:
                 send_notifications(sonarrSeriesId, sonarrEpisodeId, result.message)
             store_subtitles(result.path, path)
+            if settings.general.use_plex:
+                if settings.plex.update_series_library:
+                    plex_refresh_item(episode_metadata.imdbId, is_movie=False,
+                                      season=episode_metadata.season, episode=episode_metadata.episode)
+                if settings.plex.set_episode_added:
+                    plex_set_episode_added_date_now(episode_metadata)
+            if settings.general.use_jellyfin and settings.jellyfin.update_series_library:
+                jellyfin_refresh_item(episode_metadata.imdbId, is_movie=False,
+                                      season=episode_metadata.season, episode=episode_metadata.episode,
+                                      tvdb_id=episode_metadata.tvdbId)
         else:
-            score = 120
-            history_log_movie(4, radarrId, result, fake_provider=provider, fake_score=score)
+            history_log_movie(4, radarrId, result, fake_provider=provider, fake_score=MAX_SCORES['movie'])
             if not settings.general.dont_notify_manual_actions:
                 send_notifications_movie(radarrId, result.message)
             store_subtitles_movie(result.path, path)
+            if settings.general.use_plex:
+                if settings.plex.update_movie_library:
+                    plex_refresh_item(movie_metadata.imdbId, is_movie=True)
+                if settings.plex.set_movie_added:
+                    plex_set_movie_added_date_now(movie_metadata)
+            if settings.general.use_jellyfin and settings.jellyfin.update_movie_library:
+                jellyfin_refresh_item(movie_metadata.imdbId, is_movie=True,
+                                      tmdb_id=movie_metadata.tmdbId)
 
     return '', 204

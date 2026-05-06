@@ -72,12 +72,15 @@ const ServerSection = () => {
         name: server.name,
         uri: server.bestConnection.uri,
         local: server.bestConnection.local,
+        connections: server.connections?.map((conn) => conn.uri) || [
+          server.bestConnection.uri,
+        ],
       });
       setIsSaved(true);
       // Save to Bazarr settings
       setValue(server.bestConnection.uri, "plex_server");
       setValue(server.name, "plex_server_name");
-    } catch (error) {
+    } catch {
       // Error is handled by the mutation hook
     } finally {
       setIsSelecting(false);

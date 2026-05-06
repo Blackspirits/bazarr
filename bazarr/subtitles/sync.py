@@ -24,19 +24,16 @@ def sync_subtitles(video_path,
                    no_fix_framerate=settings.subsync.no_fix_framerate,
                    reference=None,
                    force_sync=False,
-                   job_sub_function=False):
+                   callback=None):
     if not settings.subsync.use_subsync and not force_sync:
         logging.debug('BAZARR automatic syncing is disabled in settings. Skipping sync routine.')
         return False
 
     if not job_id:
-        jobs_queue.add_job_from_function("Syncing Subtitle", is_progress=True)
+        jobs_queue.add_job_from_function(f"Syncing {srt_path}", is_progress=False)
         return False
 
-    if job_sub_function:
-        jobs_queue.update_job_progress_status(job_id=job_id, is_progress=True)
-
-    jobs_queue.update_job_progress(job_id=job_id, progress_message=f"Syncing {srt_path}")
+    jobs_queue.update_job_name(job_id=job_id, new_job_name=f"Syncing {srt_path}")
 
     if forced:
         logging.debug('BAZARR cannot sync forced subtitles. Skipping sync routine.')
@@ -65,28 +62,25 @@ def sync_subtitles(video_path,
                 'sonarr_series_id': sonarr_series_id,
                 'sonarr_episode_id': sonarr_episode_id,
                 'radarr_id': radarr_id,
-                'progress_callback': lambda x: jobs_queue.update_job_progress(job_id=x['job_id'],
-                                                                              progress_value=x['value'],
-                                                                              progress_max=x['count'],
-                                                                              progress_message=f"Syncing {srt_path}"),
                 'job_id': job_id,
                 'force_sync': force_sync,
             }
             try:
                 subsync.sync(**sync_kwargs)
+                if callback:
+                    callback()
             except Exception:
                 logging.exception(f'BAZARR an unhandled exception occurs during the synchronization process for this '
                                   f'subtitle file: {srt_path}')
                 return False
             else:
-                jobs_queue.update_job_progress(job_id=job_id, progress_value="max")
                 return True
             finally:
+                jobs_queue.update_job_name(job_id=job_id, new_job_name=f"Synced {srt_path}")
                 del subsync
                 gc.collect()
         else:
             logging.debug(f"BAZARR subsync skipped because subtitles score isn't below this "
                           f"threshold value: {subsync_threshold}%")
 
-    jobs_queue.update_job_progress(job_id=job_id, progress_value="max")
     return False

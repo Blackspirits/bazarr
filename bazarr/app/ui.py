@@ -17,7 +17,7 @@ from utilities.helper import check_credentials
 from utilities.central import get_log_file_path
 
 from .config import settings, base_url
-from .database import System
+from .database import database, System
 from .get_args import args
 
 frontend_build_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'frontend', 'build')
@@ -62,8 +62,9 @@ def check_login(actual_method):
                 })
         elif settings.auth.type == 'form':
             if 'logged_in' not in session:
-                return abort(401, message="Unauthorized")
-        actual_method(*args, **kwargs)
+                return abort(401)
+        return actual_method(*args, **kwargs)
+    return wrapper
 
 
 @ui_bp.route('/', defaults={'path': ''})
@@ -90,9 +91,14 @@ def catch_all(path):
             auth = False
 
     try:
-        updated = System.get().updated
+        updated = database.scalar(System.updated)
     except Exception:
         updated = '0'
+
+    try:
+        configured = database.scalar(System.configured)
+    except Exception:
+        configured = '0'
 
     inject = dict()
 
@@ -100,6 +106,7 @@ def catch_all(path):
         inject["baseUrl"] = base_url
         inject["canUpdate"] = not args.no_update
         inject["hasUpdate"] = updated != '0'
+        inject["isConfigured"] = configured != '0'
 
         if auth:
             inject["apiKey"] = settings.auth.apikey
@@ -111,14 +118,14 @@ def catch_all(path):
     return render_template("index.html", BAZARR_SERVER_INJECT=inject, baseUrl=template_url)
 
 
-@check_login
 @ui_bp.route('/' + FILE_LOG)
+@check_login
 def download_log():
     return send_file(get_log_file_path(), max_age=0, as_attachment=True)
 
 
-@check_login
 @ui_bp.route('/images/series/<path:url>', methods=['GET'])
+@check_login
 def series_images(url):
     url = url.strip("/")
     apikey = settings.sonarr.apikey
@@ -132,8 +139,8 @@ def series_images(url):
         return Response(stream_with_context(req.iter_content(2048)), content_type=req.headers['content-type'])
 
 
-@check_login
 @ui_bp.route('/images/movies/<path:url>', methods=['GET'])
+@check_login
 def movies_images(url):
     apikey = settings.radarr.apikey
     baseUrl = settings.radarr.base_url
@@ -146,8 +153,8 @@ def movies_images(url):
         return Response(stream_with_context(req.iter_content(2048)), content_type=req.headers['content-type'])
 
 
-@check_login
 @ui_bp.route('/system/backup/download/<path:filename>', methods=['GET'])
+@check_login
 def backup_download(filename):
     fullpath = os.path.normpath(os.path.join(settings.backup.folder, filename))
     if not fullpath.startswith(settings.backup.folder):
@@ -161,19 +168,16 @@ def swaggerui_static(filename):
     basepath = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'libs', 'flask_restx',
                             'static')
     fullpath = os.path.realpath(os.path.join(basepath, filename))
-    if not basepath == os.path.commonpath((basepath, fullpath)):
+    # Use startswith to prevent path traversal
+    if not fullpath.startswith(os.path.realpath(basepath) + os.sep):
         return '', 404
     else:
         return send_file(fullpath)
 
 
-def configured():
-    System.update({System.configured: '1'}).execute()
-
-
-@check_login
 @ui_bp.route('/test', methods=['GET'])
 @ui_bp.route('/test/<protocol>/<path:url>', methods=['GET'])
+@check_login
 def proxy(protocol, url):
     if protocol.lower() not in ['http', 'https']:
         return dict(status=False, error='Unsupported protocol', code=0)

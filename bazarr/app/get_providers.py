@@ -2,7 +2,6 @@
 
 import os
 import datetime
-import pytz
 import logging
 import subliminal_patch
 import pretty
@@ -12,11 +11,11 @@ import requests
 import traceback
 import re
 
+from zoneinfo import ZoneInfo
 from requests import ConnectionError
 from subzero.language import Language
-from subliminal_patch.exceptions import TooManyRequests, APIThrottled, ParseResponseError, IPAddressBlocked, \
-    MustGetBlacklisted, SearchLimitReached, ProviderError, ForbiddenError
-from subliminal.providers.opensubtitles import DownloadLimitReached, PaymentRequired, Unauthorized
+from subliminal_patch.exceptions import (TooManyRequests, APIThrottled, ParseResponseError, IPAddressBlocked,
+                                         MustGetBlacklisted, SearchLimitReached, ProviderError, ForbiddenError)
 from subliminal.exceptions import DownloadLimitExceeded, ServiceUnavailable, AuthenticationError, ConfigurationError
 from subliminal import region as subliminal_cache_region
 from subliminal_patch.extensions import provider_registry
@@ -33,8 +32,7 @@ from utilities.analytics import event_tracker
 _TRACEBACK_RE = re.compile(r'File "(.*?providers[\\/].*?)", line (\d+)')
 
 
-def time_until_midnight(timezone):
-    # type: (datetime.datetime) -> datetime.timedelta
+def time_until_midnight(timezone: ZoneInfo) -> datetime.timedelta:
     """
     Get timedelta until midnight.
     """
@@ -47,13 +45,13 @@ def time_until_midnight(timezone):
 # Titulky resets its download limits at the start of a new day from its perspective - the Europe/Prague timezone
 # Needs to convert to offset-naive dt
 def titulky_limit_reset_timedelta():
-    return time_until_midnight(timezone=pytz.timezone('Europe/Prague'))
+    return time_until_midnight(timezone=ZoneInfo('Europe/Prague'))
 
 
 # LegendasDivx reset its searches limit at approximately midnight, Lisbon time, every day. We wait 1 more hours just
 # to be sure.
 def legendasdivx_limit_reset_timedelta():
-    return time_until_midnight(timezone=pytz.timezone('Europe/Lisbon')) + datetime.timedelta(minutes=60)
+    return time_until_midnight(timezone=ZoneInfo('Europe/Lisbon')) + datetime.timedelta(minutes=60)
 
 
 VALID_THROTTLE_EXCEPTIONS = (TooManyRequests, DownloadLimitExceeded, ServiceUnavailable, APIThrottled,
@@ -79,18 +77,10 @@ def provider_throttle_map():
             requests.exceptions.ProxyError: (datetime.timedelta(hours=1), "1 hour"),
             AuthenticationError: (datetime.timedelta(hours=12), "12 hours"),
         },
-        "opensubtitles": {
-            TooManyRequests: (datetime.timedelta(hours=3), "3 hours"),
-            DownloadLimitExceeded: (datetime.timedelta(hours=6), "6 hours"),
-            DownloadLimitReached: (datetime.timedelta(hours=6), "6 hours"),
-            PaymentRequired: (datetime.timedelta(hours=12), "12 hours"),
-            Unauthorized: (datetime.timedelta(hours=12), "12 hours"),
-            APIThrottled: (datetime.timedelta(seconds=15), "15 seconds"),
-            ServiceUnavailable: (datetime.timedelta(hours=1), "1 hour"),
-        },
         "opensubtitlescom": {
             TooManyRequests: (datetime.timedelta(minutes=1), "1 minute"),
             DownloadLimitExceeded: (datetime.timedelta(hours=6), "6 hours"),
+            ProviderError: (datetime.timedelta(minutes=1), "1 minute"),
         },
         "addic7ed": {
             DownloadLimitExceeded: (datetime.timedelta(hours=3), "3 hours"),
@@ -104,6 +94,7 @@ def provider_throttle_map():
             TooManyRequests: (datetime.timedelta(minutes=10), "10 minutes"),
         },
         "titulky": {
+            TooManyRequests: (datetime.timedelta(minutes=1), "1 minute"),
             DownloadLimitExceeded: (
                 titulky_limit_reset_timedelta(),
                 f"{titulky_limit_reset_timedelta().seconds // 3600 + 1} hours")
@@ -134,6 +125,9 @@ def provider_throttle_map():
             ForbiddenError: (datetime.timedelta(minutes=15), "15 minutes"),
             TooManyRequests: (datetime.timedelta(hours=1), "1 hour"),
         },
+        "subdl": {
+            ProviderError: (datetime.timedelta(hours=1), "1 hour"),
+        }
     }
 
 
@@ -250,21 +244,11 @@ def get_providers_auth():
             'cookies': settings.cinemaz.cookies,
             'user_agent': settings.cinemaz.user_agent,
         },
-        'opensubtitles': {
-            'username': settings.opensubtitles.username,
-            'password': settings.opensubtitles.password,
-            'use_tag_search': settings.opensubtitles.use_tag_search,
-            'only_foreign': False,  # fixme
-            'also_foreign': False,  # fixme
-            'is_vip': settings.opensubtitles.vip,
-            'use_ssl': settings.opensubtitles.ssl,
-            'timeout': int(settings.opensubtitles.timeout) or 15,
-            'skip_wrong_fps': settings.opensubtitles.skip_wrong_fps,
-        },
         'opensubtitlescom': {'username': settings.opensubtitlescom.username,
                              'password': settings.opensubtitlescom.password,
                              'use_hash': settings.opensubtitlescom.use_hash,
                              'include_ai_translated': settings.opensubtitlescom.include_ai_translated,
+                             'include_machine_translated': settings.opensubtitlescom.include_machine_translated,
                              'api_key': 's38zmzVlW7IlYruWi7mHwDYl2SfMQoC1'
                              },
         'napiprojekt': {'only_authors': settings.napiprojekt.only_authors,
@@ -282,6 +266,10 @@ def get_providers_auth():
         'legendasnet': {
             'username': settings.legendasnet.username,
             'password': settings.legendasnet.password,
+        },
+        'pipocas': {
+            'username': settings.pipocas.username,
+            'password': settings.pipocas.password,
         },
         'xsubs': {
             'username': settings.xsubs.username,
@@ -360,7 +348,17 @@ def get_providers_auth():
         'subsource': {
             'api_key': settings.subsource.apikey,
         },
-        'animesubinfo': {}
+        'subsarr': {
+            'base_url': settings.subsarr.base_url,
+        },
+        'animesubinfo': {},
+        'subx':
+            {
+                'api_key': settings.subx.api_key,
+            },
+        'subsro': {
+            'api_key': settings.subsro.api_key,
+        }
     }
 
 
